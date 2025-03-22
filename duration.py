@@ -151,12 +151,27 @@ with st.sidebar:
                                    options=[75, 80, 85, 90, 95, 99], 
                                    index=3,
                                    help="Desired confidence level for your test results (1 - α)")
+    
+    # New parameter: One-tailed vs Two-tailed test
+    test_type = st.radio(
+        "Test Type",
+        options=["Two-tailed", "One-tailed"],
+        index=0,
+        help="""
+        Two-tailed: Test if variant is different from control (could be better or worse)
+        One-tailed: Test if variant is better than control (directional hypothesis)
+        """
+    )
 
-# Z-score lookup
-z_scores = {75: 1.15, 80: 1.28, 85: 1.44, 90: 1.65, 95: 1.96, 99: 2.58}
+# Z-score lookup tables for both test types
+two_tailed_z_scores = {75: 1.15, 80: 1.28, 85: 1.44, 90: 1.65, 95: 1.96, 99: 2.58}
+one_tailed_z_scores = {75: 0.67, 80: 0.84, 85: 1.04, 90: 1.28, 95: 1.65, 99: 2.33}
+
+# Get the appropriate z-score based on test type
+z_scores = one_tailed_z_scores if test_type == "One-tailed" else two_tailed_z_scores
 
 # Function to compute test duration with statistical reasoning
-def calculate_test_duration(daily_visits, vars, conversion, improvement, significance):
+def calculate_test_duration(daily_visits, vars, conversion, improvement, significance, is_one_tailed=False):
     # Reference values based on industry standards for sample size estimation
     reference_values = {
         0.25: 299520, 0.5: 74880, 0.75: 33280, 1.0: 18720,
@@ -169,11 +184,18 @@ def calculate_test_duration(daily_visits, vars, conversion, improvement, signifi
 
     # Adjustment factors
     variant_factor = {2: 1.0, 3: 1.5, 4: 2.0, 5: 2.5}.get(vars, 1.0)
-    sig_factor = (z_scores[significance] / z_scores[95]) ** 2
+    
+    # Use different z-score tables based on test type
+    z_table = one_tailed_z_scores if is_one_tailed else two_tailed_z_scores
+    sig_factor = (z_table[significance] / z_table[95]) ** 2
+    
     cvr_factor = 10.0 / conversion if conversion > 0 else 1.0
     visitor_factor = 250 / daily_visits if daily_visits > 0 else 1.0
 
-    days = base_days * variant_factor * sig_factor * cvr_factor * visitor_factor
+    # One-tailed tests typically require fewer samples
+    tail_factor = 0.8 if is_one_tailed else 1.0
+
+    days = base_days * variant_factor * sig_factor * cvr_factor * visitor_factor * tail_factor
     visitors_needed = days * daily_visits
     samples_per_variant = visitors_needed / vars
     
@@ -182,6 +204,9 @@ def calculate_test_duration(daily_visits, vars, conversion, improvement, signifi
     beta = 1 - (significance / 100)
     power = 1 - beta
     
+    # Get the appropriate z-score based on test type
+    z_score = z_table[significance]
+    
     return {
         "days": max(1, round(days)), 
         "visitors": max(1, round(visitors_needed)),
@@ -189,15 +214,17 @@ def calculate_test_duration(daily_visits, vars, conversion, improvement, signifi
         "alpha": alpha,
         "beta": beta,
         "power": power,
-        "z_score": z_scores[significance]
+        "z_score": z_score,
+        "is_one_tailed": is_one_tailed
     }
 
-# Compute results
-result = calculate_test_duration(daily_visitors, variations, baseline_conversion, target_improvement, significance_level)
+# Compute results based on selected test type
+is_one_tailed = (test_type == "One-tailed")
+result = calculate_test_duration(daily_visitors, variations, baseline_conversion, target_improvement, significance_level, is_one_tailed)
 
 # Main content
 # Create three columns for metrics
-metric_col1, metric_col2, metric_col3 = st.columns(3)
+metric_col1, metric_col2 = st.columns(2)
 
 with metric_col1:
     st.markdown("""
@@ -215,9 +242,14 @@ with metric_col2:
     </div>
     """.format(result['visitors']), unsafe_allow_html=True)
 
-with metric_col3:
+
+
+# Additional stat metrics
+stat_col1, stat_col2 = st.columns(2)
+
+with stat_col1:
     duration_diff = result['days'] - target_test_duration
-    status_color = "green" if abs(duration_diff) <= (target_test_duration * color_coding_percentage / 100) else "red"
+    status_color = "green" if abs(duration_diff) <= (target_test_duration) else "red"
     status_text = "On Target" if status_color == "green" else "Off Target"
     status_bg = "#d4edda" if status_color == "green" else "#f8d7da"
     
@@ -229,28 +261,7 @@ with metric_col3:
     </div>
     """.format(status_bg, status_text, duration_diff), unsafe_allow_html=True)
 
-# Additional stat metrics
-stat_col1, stat_col2, stat_col3 = st.columns(3)
-
-with stat_col1:
-    st.markdown("""
-    <div class="metric-card">
-        <div class="metric-label">Statistical Power (1-β)</div>
-        <div class="metric-value">{:.2f}</div>
-        <div class="help-text">Probability of detecting true effect</div>
-    </div>
-    """.format(result['power']), unsafe_allow_html=True)
-
 with stat_col2:
-    st.markdown("""
-    <div class="metric-card">
-        <div class="metric-label">Significance Level (α)</div>
-        <div class="metric-value">{:.3f}</div>
-        <div class="help-text">Probability of false positive</div>
-    </div>
-    """.format(result['alpha']), unsafe_allow_html=True)
-
-with stat_col3:
     st.markdown("""
     <div class="metric-card">
         <div class="metric-label">Z-Score</div>
@@ -260,8 +271,12 @@ with stat_col3:
     """.format(result['z_score']), unsafe_allow_html=True)
 
 # Recommendation box
+test_type_explanation = "This test will detect if your variant is significantly better than control (directional hypothesis)" if is_one_tailed else "This test will detect if your variant is significantly different from control (could be better or worse)"
+
 st.info(f"""
-**Recommendation:** Run your test for at least **{result['days']} days** to achieve **{significance_level}%** statistical significance.
+**Recommendation:** Run your test for at least **{result['days']} days** to achieve **{significance_level}%** statistical significance using a **{test_type}** test.
+
+{test_type_explanation}.
 
 This will require approximately **{result['visitors']:,} total visitors** with **{result['samples_per_variant']:,} visitors per variant**.
 
@@ -270,34 +285,39 @@ With these parameters, you'll be able to detect a **{target_improvement}%** impr
 
 # Statistical Explanation
 with st.expander("Statistical Methodology"):
-    st.markdown("""
+    st.markdown(f"""
     ### Statistical Calculations Behind the Calculator
     
     This calculator uses statistical power analysis to determine the minimum sample size needed for your A/B test. Here's how the calculations work:
     
     #### Key Statistical Concepts:
     
-    - **Alpha (α):** The significance level, currently set to **{:.3f}**. This is the probability of incorrectly rejecting the null hypothesis (false positive).
+    - **Alpha (α):** The significance level, currently set to **{result['alpha']:.3f}**. This is the probability of incorrectly rejecting the null hypothesis (false positive).
     
-    - **Beta (β):** The probability of a Type II error, currently **{:.3f}**. This is the probability of failing to detect a true effect.
+    - **Beta (β):** The probability of a Type II error, currently **{result['beta']:.3f}**. This is the probability of failing to detect a true effect.
     
-    - **Statistical Power (1-β):** Currently **{:.2f}**. This is the probability of correctly detecting a true effect when it exists.
+    - **Statistical Power (1-β):** Currently **{result['power']:.2f}**. This is the probability of correctly detecting a true effect when it exists.
     
-    - **Minimum Detectable Effect (MDE):** The smallest meaningful improvement you want to be able to detect, currently set to **{:.1f}%**.
+    - **Minimum Detectable Effect (MDE):** The smallest meaningful improvement you want to be able to detect, currently set to **{target_improvement:.1f}%**.
     
-    - **Z-Score:** The critical value based on your chosen significance level, currently **{:.2f}**.
+    - **Z-Score:** The critical value based on your chosen significance level and test type, currently **{result['z_score']:.2f}**.
+    
+    - **Test Type:** You've selected a **{test_type}** test. 
+        - A **one-tailed test** tests the hypothesis that the variant is better than the control (directional).
+        - A **two-tailed test** tests the hypothesis that the variant is different from the control (could be better or worse).
+        - One-tailed tests typically require smaller sample sizes but should only be used when you are exclusively interested in improvement.
     
     #### Sample Size Formula:
     
     The fundamental formula for the minimum sample size per variant is:
     
     ```
-    n = (2 * (z_α/2 + z_β)² * p * (1-p)) / (MDE)²
+    n = (2 * (z_α + z_β)² * p * (1-p)) / (MDE)²
     ```
     
     Where:
     - n = sample size per variant
-    - z_α/2 = z-score for your significance level (two-tailed test)
+    - z_α = z-score for your significance level (one-tailed or two-tailed test)
     - z_β = z-score for your desired power
     - p = baseline conversion rate
     - MDE = minimum detectable effect (as a decimal)
@@ -310,6 +330,7 @@ with st.expander("Statistical Methodology"):
     2. **Significance Factor:** Higher confidence levels require larger samples
     3. **Conversion Rate Factor:** Lower baseline conversion rates require larger samples
     4. **Traffic Factor:** Sites with lower daily traffic need longer test durations
+    5. **Test Type Factor:** One-tailed tests typically require ~20% fewer samples than two-tailed tests
     
     #### Test Duration Calculation:
     
@@ -318,7 +339,7 @@ with st.expander("Statistical Methodology"):
     ```
     
     The minimum test duration accounts for realistic traffic patterns and ensures you collect enough data to make statistically valid decisions.
-    """.format(result['alpha'], result['beta'], result['power'], target_improvement, result['z_score']), unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 # Visualization Tabs
 st.markdown('<div class="sub-header">Visual Analysis</div>', unsafe_allow_html=True)
@@ -327,7 +348,7 @@ viz_tab1, viz_tab2 = st.tabs(["Significance Impact", "MDE Impact"])
 with viz_tab1:
     # Create data for significance level comparison
     significance_levels = [75, 80, 85, 90, 95, 99]
-    sig_days = [calculate_test_duration(daily_visitors, variations, baseline_conversion, target_improvement, sig)["days"] 
+    sig_days = [calculate_test_duration(daily_visitors, variations, baseline_conversion, target_improvement, sig, is_one_tailed)["days"] 
                for sig in significance_levels]
     
     sig_df = pd.DataFrame({
@@ -342,7 +363,7 @@ with viz_tab1:
         y="Days Required",
         color="Days Required",
         color_continuous_scale="Blues",
-        title=f"Test Duration by Significance Level (at {target_improvement}% MDE)",
+        title=f"Test Duration by Significance Level (at {target_improvement}% MDE, {test_type})",
         labels={"Days Required": "Days Required", "Significance Level": "Significance Level (%)"},
         height=400
     )
@@ -371,7 +392,7 @@ with viz_tab2:
     # Create data for improvement comparison with more granular values
     # Using more data points to create a smoother curve
     imp_values = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.5, 10.0, 15.0, 20.0, 25.0, 50.0]
-    imp_days = [calculate_test_duration(daily_visitors, variations, baseline_conversion, imp, significance_level)["days"] 
+    imp_days = [calculate_test_duration(daily_visitors, variations, baseline_conversion, imp, significance_level, is_one_tailed)["days"] 
             for imp in imp_values]
     
     imp_df = pd.DataFrame({
@@ -454,7 +475,7 @@ with viz_tab2:
     
     # Update the layout with better scaling
     fig.update_layout(
-        title=f"Test Duration by Minimum Detectable Effect (at {significance_level}% significance)",
+        title=f"Test Duration by Minimum Detectable Effect (at {significance_level}% significance, {test_type})",
         xaxis_title="Minimum Detectable Effect (%)",
         yaxis_title="Days Required",
         yaxis=dict(
@@ -506,7 +527,7 @@ reference_df.index.name = "Expected Effect (%)"
 
 for imp in improvements:
     for var in variant_counts:
-        res = calculate_test_duration(daily_visitors, var, baseline_conversion, imp, significance_level)
+        res = calculate_test_duration(daily_visitors, var, baseline_conversion, imp, significance_level, is_one_tailed)
         reference_df.loc[imp, var] = res["days"]
 
 reference_df.columns = [f"{v} Variants" for v in variant_counts]
@@ -520,7 +541,7 @@ fig = px.imshow(
     color_continuous_scale="Blues_r",
     text_auto=True,
     aspect="auto",
-    title=f"Test Duration (days) by Effect Size & Variants (at {significance_level}% significance)"
+    title=f"Test Duration (days) by Effect Size & Variants (at {significance_level}% significance, {test_type})"
 )
 
 fig.update_layout(
@@ -535,9 +556,9 @@ st.plotly_chart(fig, use_container_width=True)
 # Download button for reference data
 csv = reference_df.to_csv().encode('utf-8')
 st.download_button(
-    label="Download Reference Table",
+    label=f"Download Reference Table ({test_type})",
     data=csv,
-    file_name=f"ab_test_reference_table_{significance_level}pct.csv",
+    file_name=f"ab_test_reference_table_{significance_level}pct_{test_type.lower().replace('-', '_')}.csv",
     mime="text/csv",
 )
 
@@ -554,14 +575,8 @@ st.markdown("""
 - Consider the Minimum Detectable Effect in context of implementation cost
 
 **Statistical Considerations:**
-- This calculator assumes a two-tailed test with equal traffic allocation
+- One-tailed tests should only be used when you have a strong directional hypothesis
+- Two-tailed tests are more conservative but provide more information
 - For sequential testing, use a different model with alpha spending functions
 - Be aware of the conversion variance impact on sample size requirements
-- Consider bootstrapping methods for non-normally distributed metrics
-
-**Business Applications:**
-- For revenue metrics, consider sample size impact of high variance
-- Define success metrics before starting the test
-- Document all test parameters and hypotheses clearly
-- Validate winners with follow-up tests on different segments
-""")
+- Consider bootstrapping methods for non-normally distributed metrics """)
