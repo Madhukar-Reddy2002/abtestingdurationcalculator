@@ -89,6 +89,24 @@ st.markdown("""
         visibility: visible;
         opacity: 1;
     }
+    .results-summary {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 20px;
+        margin: 20px 0;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        font-size: 16px;
+        line-height: 1.6;
+    }
+    .results-summary strong {
+        font-weight: 600;
+    }
+    .significant-result {
+        color: #28a745;
+    }
+    .not-significant-result {
+        color: #dc3545;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -124,12 +142,8 @@ with st.sidebar:
         help="Two-tailed: Test if variant is different from control (better or worse)\nOne-tailed: Test if variant is better than control"
     )
     
-    significance_level = st.select_slider(
-        "Confidence Level",
-        options=[90, 95, 99],
-        value=95,
-        help="Desired confidence level for your test results"
-    )
+    # Hidden from UI but used in calculations
+    significance_level = 95
     
     # Multiple comparison correction
     apply_correction = st.checkbox(
@@ -177,7 +191,8 @@ def analyze_binary_test(variants_data, alpha=0.05, one_tailed=False, correction=
                 "p_value": 1.0,
                 "effect": 0,
                 "relative_effect": 0,
-                "confidence_interval": (0, 0)
+                "confidence_interval": (0, 0),
+                "confidence_level": 0
             }
             results.append(result)
             continue
@@ -212,6 +227,9 @@ def analyze_binary_test(variants_data, alpha=0.05, one_tailed=False, correction=
         # Determine if result is significant
         significant = p_value < alpha
         
+        # Calculate confidence level (1 - p_value)
+        confidence_level = (1 - p_value) * 100
+        
         result = {
             "name": variant["name"],
             "visitors": variant["visitors"],
@@ -223,7 +241,8 @@ def analyze_binary_test(variants_data, alpha=0.05, one_tailed=False, correction=
             "z_score": z_score,
             "effect": absolute_effect,
             "relative_effect": relative_effect,
-            "confidence_interval": (ci_lower, ci_upper)
+            "confidence_interval": (ci_lower, ci_upper),
+            "confidence_level": confidence_level
         }
         results.append(result)
     
@@ -250,7 +269,8 @@ def analyze_continuous_test(variants_data, alpha=0.05, one_tailed=False, correct
                 "p_value": 1.0,
                 "effect": 0,
                 "relative_effect": 0,
-                "confidence_interval": (0, 0)
+                "confidence_interval": (0, 0),
+                "confidence_level": 0
             }
             results.append(result)
             continue
@@ -287,6 +307,9 @@ def analyze_continuous_test(variants_data, alpha=0.05, one_tailed=False, correct
         # Determine if result is significant
         significant = p_value < alpha
         
+        # Calculate confidence level (1 - p_value)
+        confidence_level = (1 - p_value) * 100
+        
         result = {
             "name": variant["name"],
             "visitors": variant["visitors"],
@@ -298,11 +321,40 @@ def analyze_continuous_test(variants_data, alpha=0.05, one_tailed=False, correct
             "t_stat": t_stat,
             "effect": absolute_effect,
             "relative_effect": relative_effect,
-            "confidence_interval": (ci_lower, ci_upper)
+            "confidence_interval": (ci_lower, ci_upper),
+            "confidence_level": confidence_level
         }
         results.append(result)
     
     return results
+
+# Function to generate conversational result summary
+def generate_result_summary(result, control_name, metric_type="conversion"):
+    variant_name = result["name"]
+    effect = result["relative_effect"]
+    confidence = result["confidence_level"]
+    significant = result["significant"]
+    
+    # Format effect with sign and proper precision
+    effect_abs = abs(effect)
+    effect_sign = "better" if effect > 0 else "worse"
+    
+    # Generate summary text
+    summary = f"**Your test results**\n\n"
+    summary += f"**Test \"{variant_name}\" {metric_type}d {effect_abs:.1f}% {effect_sign}** than Test \"{control_name}\". "
+    summary += f"I am **{confidence:.0f}%** certain that the changes in Test \"{variant_name}\" "
+    
+    if effect > 0:
+        summary += f"will improve your {metric_type} rate. "
+    else:
+        summary += f"will decrease your {metric_type} rate. "
+    
+    if significant:
+        summary += f"**Your results are statistically significant.**"
+    else:
+        summary += f"**Unfortunately, your results are not statistically significant.**"
+    
+    return summary
 
 # Create dynamic form for entering variant data
 st.markdown('<div class="sub-header">Enter Test Results</div>', unsafe_allow_html=True)
@@ -397,6 +449,23 @@ if analyze_btn:
         if low_sample:
             st.warning(f"⚠️ Low sample size detected for one or more variants. Results may not be reliable.")
         
+        # Create summary of results in natural language
+        variant_results = [r for r in results if not r["is_control"]]
+        if variant_results:
+            control_name = results[0]["name"]
+            for result in variant_results:
+                summary = generate_result_summary(result, control_name, "convert")
+                
+                # Create a CSS class based on significance
+                css_class = "significant-result" if result["significant"] else "not-significant-result"
+                
+                # Display the summary
+                st.markdown(f"""
+                <div class="results-summary">
+                    {summary}
+                </div>
+                """, unsafe_allow_html=True)
+        
         # Create a dashboard-style layout
         # First row: Key metrics
         col1, col2, col3 = st.columns(3)
@@ -459,9 +528,11 @@ if analyze_btn:
                 rel_lift = ""
                 ci_text = ""
                 p_value = ""
+                confidence = ""
             else:
                 lift = result["relative_effect"]
                 p_value = result["p_value"]
+                confidence_level = result["confidence_level"]
                 
                 if result["significant"]:
                     if lift > 0:
@@ -480,6 +551,7 @@ if analyze_btn:
                 ci_upper_pct = ci_upper * 100
                 ci_text = f"[{ci_lower_pct:.2f}%, {ci_upper_pct:.2f}%]"
                 p_value = f"{p_value:.4f}"
+                confidence = f"{confidence_level:.1f}%"
             
             table_data.append({
                 "Variant": result["name"],
@@ -489,6 +561,7 @@ if analyze_btn:
                 "Conversions": result["conversions"],
                 "Rate": f"{variant_rate:.2f}%",
                 "Relative Lift": rel_lift,
+                "Confidence Level": confidence,
                 "Confidence Interval": ci_text,
                 "p-value": p_value
             })
@@ -509,7 +582,7 @@ if analyze_btn:
             return ''
             
         # Display the styled table
-        styled_df = df[["Variant", "Status", "Visitors", "Conversions", "Rate", "Relative Lift", "Confidence Interval", "p-value"]]
+        styled_df = df[["Variant", "Status", "Visitors", "Conversions", "Rate", "Relative Lift", "Confidence Level", "Confidence Interval", "p-value"]]
         st.dataframe(styled_df.style.applymap(highlight_status, subset=['Status']), use_container_width=True)
         
         # Create visualization
@@ -615,11 +688,12 @@ if analyze_btn:
         
         # Statistical interpretation explanation
         with st.expander("📘 How to interpret these results"):
-            st.markdown("""
+            st.markdown(f"""
             ### Understanding A/B Test Results
             
             #### Statistical Significance
             - **p-value < {alpha}**: We can be {significance_level}% confident that the observed difference is not due to random chance
+            - **Confidence Level**: The percentage certainty that the observed difference is real and not due to random chance
             - **Confidence Interval**: The range within which the true difference is likely to fall with {significance_level}% confidence
             
             #### What the results mean
@@ -648,6 +722,23 @@ if analyze_btn:
         if low_sample:
             st.warning(f"⚠️ Low sample size detected for one or more variants. Results may not be reliable.")
         
+        # Create summary of results in natural language
+        variant_results = [r for r in results if not r["is_control"]]
+        if variant_results:
+            control_name = results[0]["name"]
+            for result in variant_results:
+                summary = generate_result_summary(result, control_name, "perform")
+                
+                # Create a CSS class based on significance
+                css_class = "significant-result" if result["significant"] else "not-significant-result"
+                
+                # Display the summary
+                st.markdown(f"""
+                <div class="results-summary">
+                    {summary}
+                </div>
+                """, unsafe_allow_html=True)
+        
         # Create a dashboard-style layout
         # First row: Key metrics
         col1, col2, col3 = st.columns(3)
@@ -663,94 +754,3 @@ if analyze_btn:
                 <div class="metric-label">{results[0]['visitors']} visitors</div>
             </div>
             """, unsafe_allow_html=True)
-        
-        with col2:
-            # Find the best performing variant
-            best_variant = None
-            best_lift = 0
-            
-            for result in results[1:]:
-                if result["relative_effect"] > best_lift:
-                    best_lift = result["relative_effect"]
-                    best_variant = result
-            
-            if best_variant:
-                best_mean = best_variant["mean"]
-                status_class = "result-positive" if best_variant["significant"] else "result-neutral"
-                
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">Best Variant: {best_variant['name']}</div>
-                    <div class="metric-value">{best_mean:.2f}</div>
-                    <div class="metric-label {status_class}">Lift: {best_lift:+.2f}%</div>
-                </div>
-                """, unsafe_allow_html=True)
-        
-        with col3:
-            correction_text = "with Bonferroni correction" if apply_correction and num_variants > 2 else ""
-            
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">Test Configuration</div>
-                <div class="metric-value">{confidence_text} Confidence</div>
-                <div class="metric-label">{hypothesis_type} test {correction_text}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Create a comprehensive comparison table
-        st.markdown("### 📋 Detailed Comparison")
-        
-        table_data = []
-        for result in results:
-            if result["is_control"]:
-                status = "Control"
-                status_class = ""
-                rel_lift = ""
-                ci_text = ""
-                p_value = ""
-            else:
-                lift = result["relative_effect"]
-                p_value = result["p_value"]
-                
-                if result["significant"]:
-                    if lift > 0:
-                        status = "✅ Winner"
-                        status_class = "result-positive"
-                    else:
-                        status = "❌ Loser"
-                        status_class = "result-negative"
-                else:
-                    status = "⚖️ Inconclusive"
-                    status_class = "result-neutral"
-                
-                rel_lift = f"{lift:+.2f}%"
-                ci_lower, ci_upper = result["confidence_interval"]
-                ci_text = f"[{ci_lower:.2f}, {ci_upper:.2f}]"
-                p_value = f"{p_value:.4f}"
-            
-            table_data.append({
-                "Variant": result["name"],
-                "Status": status,
-                "Status Class": status_class,
-                "Visitors": result["visitors"],
-                "Mean Value": f"{result['mean']:.2f}",
-                "Std Dev": f"{result.get('std_dev', 0):.2f}",
-                "Relative Lift": rel_lift,
-                "Confidence Interval": ci_text,
-                "p-value": p_value
-            })
-        
-        # Convert to DataFrame for display
-        df = pd.DataFrame(table_data)
-        
-        # Create styled DataFrame
-        def highlight_status(val):
-            if val == "✅ Winner":
-                return 'background-color: #d4edda; color: #155724'
-            elif val == "❌ Loser":
-                return 'background-color: #f8d7da; color: #721c24'
-            elif val == "⚖️ Inconclusive":
-                return 'background-color: #e2e3e5; color: #383d41'
-            elif val == "Control":
-                return 'background-color: #cce5ff; color: #004085'
-            return ''
