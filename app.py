@@ -16,20 +16,25 @@ def calculate_significance(conv_a, n_a, conv_b, n_b):
     uplift = ((p_b - p_a) / p_a) * 100
     return round(confidence, 2), round(p_a * 100, 2), round(p_b * 100, 2), round(uplift, 2)
 
-# --- Reverse engineer required conversions ---
-def required_conversions(n_a, conv_a, n_b, target_confidence):
-    p_a = conv_a / n_a
-    min_conv_needed = 0
-    for conv_b in range(n_b + 1):
-        p_b = conv_b / n_b
-        p_pool = (conv_a + conv_b) / (n_a + n_b)
-        se = np.sqrt(p_pool * (1 - p_pool) * (1/n_a + 1/n_b))
-        z = (p_b - p_a) / se
-        p_value = 1 - norm.cdf(abs(z))
-        confidence = (1 - p_value) * 100
-        if confidence >= target_confidence:
-            return conv_b
-    return None
+# --- Function to calculate required conversions for different significance levels ---
+def calculate_required_conversions(n_a, p_a, significance_level):
+    # Z-scores for various significance levels
+    z_scores = {
+        85: 1.44,
+        90: 1.645,
+        92: 1.75,
+        95: 1.96
+    }
+    
+    if significance_level not in z_scores:
+        return "Invalid significance level"
+    
+    z = z_scores[significance_level]
+    p_pool = p_a  # Control conversion rate (p_a)
+    
+    # Reverse engineer the formula to calculate the number of required conversions in variant B
+    required_conv_b = n_a * p_pool * (1 - p_pool) * z**2 / (significance_level * 0.01)**2
+    return int(required_conv_b)
 
 # --- Sidebar ---
 st.sidebar.title("A/B Test Settings")
@@ -90,19 +95,19 @@ if st.button("Calculate"):
     df = pd.DataFrame(rows)
     st.dataframe(df)
 
-    # Table for required conversions
-    st.subheader("🔄 How Many Conversions Do We Need for Significance?")
-    control_visitors, control_conversions = data[0]
-    for i in range(1, num_variants):
-        st.markdown(f"**Variant {chr(65 + i)} (vs Control)**")
-        variant_visitors, _ = data[i]
-        significance_levels = [85, 90, 92, 95]
-        result_rows = []
-        for sig in significance_levels:
-            conv_needed = required_conversions(control_visitors, control_conversions, variant_visitors, sig)
-            result_rows.append({"Target Confidence (%)": sig, "Required Conversions": conv_needed})
-        result_df = pd.DataFrame(result_rows)
-        st.table(result_df)
+    # --- Calculate the number of conversions needed for each significance level ---
+    st.subheader("💡 Required Conversions for Different Significance Levels")
+    control_p = control_conversions / control_visitors
+    
+    significance_levels = [85, 90, 92, 95]
+    required_conversions = []
+    
+    for level in significance_levels:
+        required = calculate_required_conversions(control_visitors, control_p, level)
+        required_conversions.append({"Significance Level": f"{level}%", "Required Conversions": required})
+
+    required_df = pd.DataFrame(required_conversions)
+    st.dataframe(required_df)
 
     # Explanation of formula (shown by default)
     with st.expander("📘 How Do We Calculate Significance? (Open to Learn More)", expanded=True):
