@@ -1,7 +1,6 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 from scipy import stats
 import math
@@ -29,66 +28,6 @@ st.markdown("""
         color: #424242;
         margin-bottom: 1rem;
     }
-    .metric-card {
-        background-color: #f8f9fa;
-        border-radius: 10px;
-        padding: 15px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        text-align: center;
-        margin-bottom: 15px;
-    }
-    .metric-value {
-        color: #424242;
-        font-size: 26px;
-        font-weight: bold;
-        margin: 10px 0;
-    }
-    .metric-label {
-        font-size: 14px;
-        color: #666;
-    }
-    .result-positive {
-        color: #28a745;
-        font-weight: bold;
-    }
-    .result-negative {
-        color: #dc3545;
-        font-weight: bold;
-    }
-    .result-neutral {
-        color: #6c757d;
-        font-weight: bold;
-    }
-    .stDataFrame {
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    }
-    .tooltip {
-        position: relative;
-        display: inline-block;
-        cursor: help;
-    }
-    .tooltip .tooltiptext {
-        visibility: hidden;
-        width: 200px;
-        background-color: #555;
-        color: #fff;
-        text-align: center;
-        border-radius: 6px;
-        padding: 5px;
-        position: absolute;
-        z-index: 1;
-        bottom: 125%;
-        left: 50%;
-        margin-left: -100px;
-        opacity: 0;
-        transition: opacity 0.3s;
-    }
-    .tooltip:hover .tooltiptext {
-        visibility: visible;
-        opacity: 1;
-    }
     .results-summary {
         background-color: #f8f9fa;
         border-radius: 10px;
@@ -107,15 +46,36 @@ st.markdown("""
     .not-significant-result {
         color: #dc3545;
     }
+    .metric-card {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 15px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        text-align: center;
+        margin-bottom: 15px;
+    }
+    .metric-value {
+        color: #424242;
+        font-size: 26px;
+        font-weight: bold;
+        margin: 10px 0;
+    }
+    .metric-label {
+        font-size: 14px;
+        color: #666;
+    }
+    .stDataFrame {
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # App title and description
 st.markdown('<div class="main-header">A/B Test Significance Calculator</div>', unsafe_allow_html=True)
 st.markdown("""
-This calculator determines the **statistical significance** of your A/B test results. 
-It analyzes your test data to determine if the observed differences between your control and variant 
-are statistically significant or likely due to random chance.
+This calculator determines the **statistical significance** of your A/B test results and how much confidence you can have in the observed uplift.
 """)
 
 # Sidebar for configurations
@@ -142,9 +102,6 @@ with st.sidebar:
         help="Two-tailed: Test if variant is different from control (better or worse)\nOne-tailed: Test if variant is better than control"
     )
     
-    # Hidden from UI but used in calculations
-    significance_level = 95
-    
     # Multiple comparison correction
     apply_correction = st.checkbox(
         "Apply Bonferroni Correction",
@@ -170,6 +127,29 @@ with st.sidebar:
             help="Show a warning if sample size is below this threshold"
         )
 
+# Function to calculate statistical power based on sample size
+def calculate_power(control_rate, variant_rate, control_size, variant_size, alpha=0.05):
+    # Effect size in terms of proportions
+    effect_size = abs(variant_rate - control_rate)
+    
+    # Calculate standard errors
+    se_control = math.sqrt(control_rate * (1 - control_rate) / control_size)
+    se_variant = math.sqrt(variant_rate * (1 - variant_rate) / variant_size)
+    
+    # Pooled standard error
+    se_pooled = math.sqrt(se_control**2 + se_variant**2)
+    
+    # Z-score for the effect
+    z_effect = effect_size / se_pooled if se_pooled > 0 else 0
+    
+    # Z-score for alpha (two-tailed)
+    z_alpha = stats.norm.ppf(1 - alpha/2)
+    
+    # Calculate power
+    power = 1 - stats.norm.cdf(z_alpha - z_effect)
+    
+    return power * 100  # Return as percentage
+
 # Function to calculate statistical significance for binary (conversion) metrics
 def analyze_binary_test(variants_data, alpha=0.05, one_tailed=False, correction=False):
     results = []
@@ -192,7 +172,8 @@ def analyze_binary_test(variants_data, alpha=0.05, one_tailed=False, correction=
                 "effect": 0,
                 "relative_effect": 0,
                 "confidence_interval": (0, 0),
-                "confidence_level": 0
+                "confidence_level": 0,
+                "power": 0
             }
             results.append(result)
             continue
@@ -230,6 +211,9 @@ def analyze_binary_test(variants_data, alpha=0.05, one_tailed=False, correction=
         # Calculate confidence level (1 - p_value)
         confidence_level = (1 - p_value) * 100
         
+        # Calculate statistical power
+        power = calculate_power(control_rate, variant_rate, control["visitors"], variant["visitors"], alpha)
+        
         result = {
             "name": variant["name"],
             "visitors": variant["visitors"],
@@ -242,7 +226,8 @@ def analyze_binary_test(variants_data, alpha=0.05, one_tailed=False, correction=
             "effect": absolute_effect,
             "relative_effect": relative_effect,
             "confidence_interval": (ci_lower, ci_upper),
-            "confidence_level": confidence_level
+            "confidence_level": confidence_level,
+            "power": power
         }
         results.append(result)
     
@@ -270,7 +255,8 @@ def analyze_continuous_test(variants_data, alpha=0.05, one_tailed=False, correct
                 "effect": 0,
                 "relative_effect": 0,
                 "confidence_interval": (0, 0),
-                "confidence_level": 0
+                "confidence_level": 0,
+                "power": 0
             }
             results.append(result)
             continue
@@ -310,6 +296,13 @@ def analyze_continuous_test(variants_data, alpha=0.05, one_tailed=False, correct
         # Calculate confidence level (1 - p_value)
         confidence_level = (1 - p_value) * 100
         
+        # Rough estimate of power (this is simplified)
+        # For a proper power calculation, you'd need more information
+        effect_size_d = abs(absolute_effect) / pooled_std
+        ncp = effect_size_d * math.sqrt(control["visitors"] * variant["visitors"] / (control["visitors"] + variant["visitors"]))
+        power = 1 - stats.nct.cdf(stats.t.ppf(1-alpha, df), df, ncp)
+        power = power * 100  # Convert to percentage
+        
         result = {
             "name": variant["name"],
             "visitors": variant["visitors"],
@@ -322,7 +315,8 @@ def analyze_continuous_test(variants_data, alpha=0.05, one_tailed=False, correct
             "effect": absolute_effect,
             "relative_effect": relative_effect,
             "confidence_interval": (ci_lower, ci_upper),
-            "confidence_level": confidence_level
+            "confidence_level": confidence_level,
+            "power": power
         }
         results.append(result)
     
@@ -333,7 +327,9 @@ def generate_result_summary(result, control_name, metric_type="conversion"):
     variant_name = result["name"]
     effect = result["relative_effect"]
     confidence = result["confidence_level"]
+    power = result["power"]
     significant = result["significant"]
+    total_visitors = result["visitors"] + [r["visitors"] for r in results if r["name"] == control_name][0]
     
     # Format effect with sign and proper precision
     effect_abs = abs(effect)
@@ -353,6 +349,18 @@ def generate_result_summary(result, control_name, metric_type="conversion"):
         summary += f"**Your results are statistically significant.**"
     else:
         summary += f"**Unfortunately, your results are not statistically significant.**"
+    
+    # Add information about the reliability based on power
+    summary += f"\n\n**Test reliability: {power:.0f}%**. "
+    
+    if power < 50:
+        summary += f"With only {total_visitors} total visitors, the sample size is too small to be confident in these results. "
+        summary += f"Consider running the test longer to collect more data."
+    elif power < 80:
+        summary += f"With {total_visitors} total visitors, we have moderate confidence in these results. "
+        summary += f"For higher reliability, consider collecting more data."
+    else:
+        summary += f"With {total_visitors} total visitors, this test has sufficient statistical power to detect the observed difference."
     
     return summary
 
@@ -426,8 +434,8 @@ if metric_type == "Continuous (Revenue/Value)":
 st.markdown("<br>", unsafe_allow_html=True)
 analyze_btn = st.button("Calculate Significance", type="primary", use_container_width=True)
 
-# Convert significance level to alpha
-alpha = (100 - significance_level) / 100
+# Default alpha level for statistical significance
+alpha = 0.05
 one_tailed = (hypothesis_type == "One-tailed")
 
 if analyze_btn:
@@ -436,9 +444,9 @@ if analyze_btn:
     # Perform analysis based on metric type
     if metric_type == "Binary (Conversion)":
         results = analyze_binary_test(binary_variants, 
-                                      alpha=alpha, 
-                                      one_tailed=one_tailed, 
-                                      correction=apply_correction)
+                                     alpha=alpha, 
+                                     one_tailed=one_tailed, 
+                                     correction=apply_correction)
         
         # Check for low sample size warning
         low_sample = False
@@ -456,256 +464,26 @@ if analyze_btn:
             for result in variant_results:
                 summary = generate_result_summary(result, control_name, "convert")
                 
-                # Create a CSS class based on significance
-                css_class = "significant-result" if result["significant"] else "not-significant-result"
-                
                 # Display the summary
                 st.markdown(f"""
                 <div class="results-summary">
                     {summary}
                 </div>
                 """, unsafe_allow_html=True)
-        
-        # Create a dashboard-style layout
-        # First row: Key metrics
-        col1, col2, col3 = st.columns(3)
-        
-        control_rate = results[0]["conversion_rate"] * 100
-        confidence_text = f"{significance_level}%"
-        
-        with col1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">Control Conversion Rate</div>
-                <div class="metric-value">{control_rate:.2f}%</div>
-                <div class="metric-label">{results[0]['conversions']} / {results[0]['visitors']} visitors</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            # Find the best performing variant
-            best_variant = None
-            best_lift = 0
-            
-            for result in results[1:]:
-                if result["relative_effect"] > best_lift:
-                    best_lift = result["relative_effect"]
-                    best_variant = result
-            
-            if best_variant:
-                best_rate = best_variant["conversion_rate"] * 100
-                status_class = "result-positive" if best_variant["significant"] else "result-neutral"
                 
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">Best Variant: {best_variant['name']}</div>
-                    <div class="metric-value">{best_rate:.2f}%</div>
-                    <div class="metric-label {status_class}">Lift: {best_lift:+.2f}%</div>
-                </div>
-                """, unsafe_allow_html=True)
-        
-        with col3:
-            correction_text = "with Bonferroni correction" if apply_correction and num_variants > 2 else ""
-            
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">Test Configuration</div>
-                <div class="metric-value">{confidence_text} Confidence</div>
-                <div class="metric-label">{hypothesis_type} test {correction_text}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Create a comprehensive comparison table
-        st.markdown("### 📋 Detailed Comparison")
-        
-        table_data = []
-        for result in results:
-            variant_rate = result["conversion_rate"] * 100
-            
-            if result["is_control"]:
-                status = "Control"
-                status_class = ""
-                rel_lift = ""
-                ci_text = ""
-                p_value = ""
-                confidence = ""
-            else:
-                lift = result["relative_effect"]
-                p_value = result["p_value"]
-                confidence_level = result["confidence_level"]
+                # Create a simple table for key metrics
+                metrics_df = pd.DataFrame([
+                    {"Metric": "Visitors", control_name: results[0]["visitors"], result["name"]: result["visitors"]},
+                    {"Metric": "Conversions", control_name: results[0]["conversions"], result["name"]: result["conversions"]},
+                    {"Metric": "Conversion Rate", 
+                     control_name: f"{results[0]['conversion_rate']*100:.2f}%", 
+                     result["name"]: f"{result['conversion_rate']*100:.2f}%"},
+                    {"Metric": "Relative Uplift", control_name: "baseline", result["name"]: f"{result['relative_effect']:+.2f}%"},
+                    {"Metric": "Confidence Level", control_name: "N/A", result["name"]: f"{result['confidence_level']:.1f}%"},
+                    {"Metric": "Statistical Power", control_name: "N/A", result["name"]: f"{result['power']:.1f}%"}
+                ])
                 
-                if result["significant"]:
-                    if lift > 0:
-                        status = "✅ Winner"
-                        status_class = "result-positive"
-                    else:
-                        status = "❌ Loser"
-                        status_class = "result-negative"
-                else:
-                    status = "⚖️ Inconclusive"
-                    status_class = "result-neutral"
-                
-                rel_lift = f"{lift:+.2f}%"
-                ci_lower, ci_upper = result["confidence_interval"]
-                ci_lower_pct = ci_lower * 100
-                ci_upper_pct = ci_upper * 100
-                ci_text = f"[{ci_lower_pct:.2f}%, {ci_upper_pct:.2f}%]"
-                p_value = f"{p_value:.4f}"
-                confidence = f"{confidence_level:.1f}%"
-            
-            table_data.append({
-                "Variant": result["name"],
-                "Status": status,
-                "Status Class": status_class,
-                "Visitors": result["visitors"],
-                "Conversions": result["conversions"],
-                "Rate": f"{variant_rate:.2f}%",
-                "Relative Lift": rel_lift,
-                "Confidence Level": confidence,
-                "Confidence Interval": ci_text,
-                "p-value": p_value
-            })
-        
-        # Convert to DataFrame for display
-        df = pd.DataFrame(table_data)
-        
-        # Create styled DataFrame
-        def highlight_status(val):
-            if val == "✅ Winner":
-                return 'background-color: #d4edda; color: #155724'
-            elif val == "❌ Loser":
-                return 'background-color: #f8d7da; color: #721c24'
-            elif val == "⚖️ Inconclusive":
-                return 'background-color: #e2e3e5; color: #383d41'
-            elif val == "Control":
-                return 'background-color: #cce5ff; color: #004085'
-            return ''
-            
-        # Display the styled table
-        styled_df = df[["Variant", "Status", "Visitors", "Conversions", "Rate", "Relative Lift", "Confidence Level", "Confidence Interval", "p-value"]]
-        st.dataframe(styled_df.style.applymap(highlight_status, subset=['Status']), use_container_width=True)
-        
-        # Create visualization
-        st.markdown("### 📊 Conversion Rate Visualization")
-        
-        # Prepare data for visualization
-        viz_data = []
-        for result in results:
-            variant_status = "Control" if result["is_control"] else (
-                             "Winner" if result["significant"] and result["effect"] > 0 else (
-                             "Loser" if result["significant"] and result["effect"] < 0 else "Inconclusive"))
-            
-            viz_data.append({
-                "Variant": result["name"],
-                "Conversion Rate (%)": result["conversion_rate"] * 100,
-                "Status": variant_status,
-                "Visitors": result["visitors"],
-                "Conversions": result["conversions"]
-            })
-        
-        viz_df = pd.DataFrame(viz_data)
-        
-        # Create color map
-        color_map = {
-            "Control": "#1E88E5",  # Blue
-            "Winner": "#28a745",   # Green
-            "Loser": "#dc3545",    # Red
-            "Inconclusive": "#6c757d"  # Gray
-        }
-        
-        # Create bar chart with confidence intervals
-        fig = go.Figure()
-        
-        # Add bars
-        for _, row in viz_df.iterrows():
-            fig.add_trace(go.Bar(
-                x=[row["Variant"]],
-                y=[row["Conversion Rate (%)"]],
-                name=row["Variant"],
-                marker_color=color_map[row["Status"]],
-                text=[f"{row['Conversion Rate (%)']:.2f}%"],
-                textposition="auto",
-                hovertemplate=f"<b>{row['Variant']} ({row['Status']})</b><br>Conversion Rate: {row['Conversion Rate (%)']:.2f}%<br>Visitors: {row['Visitors']}<br>Conversions: {row['Conversions']}<extra></extra>"
-            ))
-        
-        # Add error bars for confidence intervals if not control
-        for i, result in enumerate(results):
-            if not result["is_control"]:
-                ci_lower, ci_upper = result["confidence_interval"]
-                ci_lower_pct = (result["conversion_rate"] + ci_lower) * 100
-                ci_upper_pct = (result["conversion_rate"] + ci_upper) * 100
-                
-                # Add line for confidence interval
-                fig.add_trace(go.Scatter(
-                    x=[result["name"], result["name"]],
-                    y=[ci_lower_pct, ci_upper_pct],
-                    mode="lines",
-                    marker=dict(color="black"),
-                    line=dict(width=2),
-                    showlegend=False,
-                    hoverinfo="skip"
-                ))
-                
-                # Add markers for confidence interval boundaries
-                for y_val in [ci_lower_pct, ci_upper_pct]:
-                    fig.add_trace(go.Scatter(
-                        x=[result["name"]],
-                        y=[y_val],
-                        mode="markers",
-                        marker=dict(color="black", size=6),
-                        showlegend=False,
-                        hovertemplate=f"CI Boundary: {y_val:.2f}%<extra></extra>"
-                    ))
-        
-        # Add a horizontal line for the control rate
-        fig.add_shape(
-            type="line",
-            x0=-0.5,
-            y0=control_rate,
-            x1=len(results) - 0.5,
-            y1=control_rate,
-            line=dict(color="#1E88E5", width=2, dash="dash"),
-        )
-        
-        # Update layout
-        fig.update_layout(
-            title="Conversion Rate by Variant with Confidence Intervals",
-            xaxis_title="Variant",
-            yaxis_title="Conversion Rate (%)",
-            yaxis=dict(
-                zeroline=True,
-                zerolinewidth=2,
-                zerolinecolor="rgba(0,0,0,0.2)",
-            ),
-            hovermode="closest",
-            height=500,
-            margin=dict(l=50, r=50, t=80, b=50),
-            showlegend=False,
-            plot_bgcolor="white",
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Statistical interpretation explanation
-        with st.expander("📘 How to interpret these results"):
-            st.markdown(f"""
-            ### Understanding A/B Test Results
-            
-            #### Statistical Significance
-            - **p-value < {alpha}**: We can be {significance_level}% confident that the observed difference is not due to random chance
-            - **Confidence Level**: The percentage certainty that the observed difference is real and not due to random chance
-            - **Confidence Interval**: The range within which the true difference is likely to fall with {significance_level}% confidence
-            
-            #### What the results mean
-            - **Winner (✅)**: The variant outperformed the control with statistical significance
-            - **Loser (❌)**: The variant underperformed compared to the control with statistical significance
-            - **Inconclusive (⚖️)**: We cannot determine with confidence whether the variant is better or worse than the control
-            
-            #### Next steps
-            - **For winners**: Consider implementing the winning variant
-            - **For losers**: Avoid implementing or revise the approach
-            - **For inconclusive results**: Consider running the test longer to collect more data
-            """.format(alpha=alpha, significance_level=significance_level))
+                st.dataframe(metrics_df.set_index("Metric"), use_container_width=True)
         
     else:  # Continuous metric analysis
         results = analyze_continuous_test(continuous_variants, 
@@ -729,28 +507,35 @@ if analyze_btn:
             for result in variant_results:
                 summary = generate_result_summary(result, control_name, "perform")
                 
-                # Create a CSS class based on significance
-                css_class = "significant-result" if result["significant"] else "not-significant-result"
-                
                 # Display the summary
                 st.markdown(f"""
                 <div class="results-summary">
                     {summary}
                 </div>
                 """, unsafe_allow_html=True)
+                
+                # Create a simple table for key metrics
+                metrics_df = pd.DataFrame([
+                    {"Metric": "Visitors", control_name: results[0]["visitors"], result["name"]: result["visitors"]},
+                    {"Metric": "Mean Value", 
+                     control_name: f"{results[0]['mean']:.2f}", 
+                     result["name"]: f"{result['mean']:.2f}"},
+                    {"Metric": "Standard Deviation", 
+                     control_name: f"{results[0]['std_dev']:.2f}", 
+                     result["name"]: f"{result['std_dev']:.2f}"},
+                    {"Metric": "Relative Uplift", control_name: "baseline", result["name"]: f"{result['relative_effect']:+.2f}%"},
+                    {"Metric": "Confidence Level", control_name: "N/A", result["name"]: f"{result['confidence_level']:.1f}%"},
+                    {"Metric": "Statistical Power", control_name: "N/A", result["name"]: f"{result['power']:.1f}%"}
+                ])
+                
+                st.dataframe(metrics_df.set_index("Metric"), use_container_width=True)
         
-        # Create a dashboard-style layout
-        # First row: Key metrics
-        col1, col2, col3 = st.columns(3)
-        
-        control_mean = results[0]["mean"]
-        confidence_text = f"{significance_level}%"
-        
-        with col1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">Control Mean Value</div>
-                <div class="metric-value">{control_mean:.2f}</div>
-                <div class="metric-label">{results[0]['visitors']} visitors</div>
-            </div>
-            """, unsafe_allow_html=True)
+    st.markdown("""
+    ### How to interpret test reliability
+    
+    - **Below 50%**: Sample size is too small, results are unreliable
+    - **50-80%**: Moderate reliability, but more data would be beneficial
+    - **Above 80%**: Good reliability, sufficient sample size to detect the observed effect
+    
+    Higher test reliability means you can be more confident that the observed uplift is real and not due to random chance.
+    """)
