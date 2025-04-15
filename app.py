@@ -9,30 +9,125 @@ import altair as alt
 # Set page config
 st.set_page_config(page_title="A/B Test Analyzer", layout="wide")
 
-# Custom CSS
+# Enhanced Custom CSS with better responsive design and more prominent headers
 st.markdown("""
 <style>
     .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+        max-width: 1200px;
+        margin: 0 auto;
     }
+    
+    /* Enhanced Title Styling */
     .main-header {
         font-size: 2.5rem;
-        font-weight: 700;
+        font-weight: 800;
         color: #1565C0;
+        text-align: center;
+        margin-bottom: 1.5rem;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        background: linear-gradient(90deg, #1565C0, #64B5F6);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        padding: 0.5rem 0;
     }
+    
+    /* Enhanced Section Headers */
     .section-header {
-        font-size: 1.5rem;
-        font-weight: 600;
+        font-size: 1.75rem;
+        font-weight: 700;
         color: #1976D2;
-        margin-top: 1rem;
+        margin-top: 1.5rem;
         margin-bottom: 1rem;
+        border-bottom: 2px solid #1976D2;
+        padding-bottom: 0.5rem;
     }
+    
+    /* Enhanced Subsection Headers */
+    .subsection-header {
+        font-size: 1.4rem;
+        font-weight: 600;
+        color: #2196F3;
+        margin-top: 1rem;
+        margin-bottom: 0.75rem;
+    }
+    
+    /* Redesigned Insight Box */
     .insight-box {
         background-color: #f1f8ff;
-        border-left: 4px solid #1976D2;
-        padding: 1rem;
+        border-left: 5px solid #1976D2;
+        padding: 1.25rem;
         border-radius: 0.5rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        margin-bottom: 1rem;
+    }
+    
+    /* Mobile Responsiveness */
+    @media (max-width: 768px) {
+        .main-header {
+            font-size: 2rem;
+        }
+        .section-header {
+            font-size: 1.5rem;
+        }
+        .subsection-header {
+            font-size: 1.2rem;
+        }
+        .insight-box {
+            padding: 1rem;
+        }
+        .stDataFrame {
+            font-size: 0.8rem;
+        }
+    }
+    
+    /* Custom Data Table Styling */
+    .custom-dataframe {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .custom-dataframe th {
+        background-color: #1976D2;
+        color: white;
+        padding: 0.5rem;
+        text-align: left;
+    }
+    .custom-dataframe td {
+        padding: 0.5rem;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    .custom-dataframe tr:nth-child(even) {
+        background-color: #f5f5f5;
+    }
+    
+    /* Status Indicators */
+    .status-positive {
+        color: #4CAF50;
+        font-weight: bold;
+    }
+    .status-negative {
+        color: #F44336;
+        font-weight: bold;
+    }
+    .status-neutral {
+        color: #FF9800;
+        font-weight: bold;
+    }
+    
+    /* Button Styling */
+    .stButton > button {
+        background-color: #1976D2;
+        color: white;
+        font-weight: bold;
+        border-radius: 4px;
+        padding: 0.5rem 1rem;
+        border: none;
+        transition: all 0.3s ease;
+    }
+    .stButton > button:hover {
+        background-color: #1565C0;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -73,9 +168,9 @@ def calculate_required_conversions(n_a, conv_a, n_b, significance_level):
 # --- Main Layout ---
 st.markdown('<p class="main-header">A/B Test Analyzer</p>', unsafe_allow_html=True)
 
-# --- Sidebar ---
+# --- Sidebar with improved styling ---
 with st.sidebar:
-    st.title("Test Settings")
+    st.markdown('<p class="subsection-header">Test Settings</p>', unsafe_allow_html=True)
     num_variants = st.number_input("Number of Variants (including Control)", min_value=2, max_value=4, value=2, step=1)
     st.divider()
     with st.expander("About this tool", expanded=False):
@@ -93,22 +188,32 @@ with st.sidebar:
 st.markdown('<p class="section-header">Test Data Input</p>', unsafe_allow_html=True)
 
 data = []
-col1, col2 = st.columns([1, 1])
+# Responsive columns design
+col_size = 12 // min(num_variants, 3)  # Dynamically adjust column widths
+cols = st.columns([col_size] * min(num_variants, 3))
 
-with col1:
-    st.subheader("Control (A)")
+# Control data input
+with cols[0]:
+    st.markdown('<p class="subsection-header">Control (A)</p>', unsafe_allow_html=True)
     control_visitors = st.number_input("Visitors", min_value=1, value=1000, key="visitors_0")
     control_conversions = st.number_input("Conversions", min_value=0, value=100, key="conversions_0")
     data.append((control_visitors, control_conversions))
 
-with col2:
-    for i in range(1, num_variants):
-        st.subheader(f"Variant {chr(65 + i)}")
+# Variant data inputs
+variant_idx = 1
+for i in range(1, num_variants):
+    col_idx = i % len(cols)
+    with cols[col_idx]:
+        st.markdown(f'<p class="subsection-header">Variant {chr(65 + i)}</p>', unsafe_allow_html=True)
         visitors = st.number_input(f"Visitors", min_value=1, value=1000, key=f"visitors_{i}")
         conversions = st.number_input(f"Conversions", min_value=0, value=120, key=f"conversions_{i}")
         data.append((visitors, conversions))
+        variant_idx += 1
 
-analyze_button = st.button("Analyze Results", type="primary")
+# Create a centered button with custom styling
+_, center_col, _ = st.columns([1, 2, 1])
+with center_col:
+    analyze_button = st.button("Analyze Results", type="primary", use_container_width=True)
 
 # --- Results Section ---
 if analyze_button:
@@ -151,17 +256,19 @@ if analyze_button:
             "is_significant": is_significant
         })
         
+        uplift_text = f"{uplift}% (+)" if uplift > 0 else f"{uplift}% (-)"
+        
         rows.append({
             "Variant": f"{chr(65 + i)}",
             "Visitors": f"{variant_visitors:,}",
             "Conversions": f"{variant_conversions:,}",
             "Conversion Rate": f"{rate_b}%",
-            "Uplift": f"{uplift}%" + (" (+" if uplift > 0 else " ("),
+            "Uplift": uplift_text,
             "Confidence": f"{confidence}%",
             "Significance": f"{significance_icon} {significance_text}"
         })
 
-    # Display main results table
+    # Display main results table with improved styling
     df = pd.DataFrame(rows)
     st.dataframe(
         df,
@@ -175,9 +282,10 @@ if analyze_button:
             "Significance": st.column_config.TextColumn("Significance")
         },
         hide_index=True,
+        use_container_width=True
     )
     
-    # Visualization
+    # Visualization with improved styling
     if len(data) > 1:
         st.markdown('<p class="section-header">Visualization</p>', unsafe_allow_html=True)
         
@@ -187,6 +295,7 @@ if analyze_button:
             'Conversion Rate': [float(row["Conversion Rate"].replace("%", "")) for row in rows]
         })
         
+        # Enhanced styling for the chart
         conversion_chart = alt.Chart(chart_data).mark_bar().encode(
             x=alt.X('Variant', sort=None, title='Variant'),
             y=alt.Y('Conversion Rate', title='Conversion Rate (%)'),
@@ -197,20 +306,42 @@ if analyze_button:
             ),
             tooltip=['Variant', 'Conversion Rate']
         ).properties(
-            title='Conversion Rate by Variant',
-            width=500,
+            title={
+                'text': 'Conversion Rate by Variant',
+                'fontSize': 20,
+                'fontWeight': 'bold',
+                'color': '#1976D2'
+            },
+            width='container',
             height=300
+        ).configure_axis(
+            labelFontSize=12,
+            titleFontSize=14,
+            titleFontWeight='bold'
+        ).configure_title(
+            fontSize=16,
+            fontWeight='bold'
         )
         
         st.altair_chart(conversion_chart, use_container_width=True)
     
-    # Required Conversions Section
+    # Required Conversions Section with improved responsiveness
     st.markdown('<p class="section-header">Required Conversions Analysis</p>', unsafe_allow_html=True)
     
-    col1, col2 = st.columns([3, 2])
+    # Use a dynamic column layout that works better on mobile
+    if st.session_state.get('screen_width', 1000) < 768:
+        # Stack columns on mobile
+        cols = st.columns([1])
+        insights_col = cols[0]
+        required_col = cols[0]
+    else:
+        # Side by side on desktop
+        required_col, insights_col = st.columns([3, 2])
     
-    with col1:
+    with required_col:
         if len(data) > 1:
+            st.markdown('<p class="subsection-header">Conversions Required for Significance</p>', unsafe_allow_html=True)
+            
             # Calculate required conversions for each significance level
             significance_levels = [85, 90, 92, 95]
             required_conversions = []
@@ -238,11 +369,11 @@ if analyze_button:
                 })
 
             required_df = pd.DataFrame(required_conversions)
-            st.dataframe(required_df, hide_index=True)
+            st.dataframe(required_df, hide_index=True, use_container_width=True)
     
-    with col2:
+    with insights_col:
         st.markdown('<div class="insight-box">', unsafe_allow_html=True)
-        st.markdown("### Key Insights")
+        st.markdown('<p class="subsection-header">Key Insights</p>', unsafe_allow_html=True)
         
         if len(data) > 1:
             variant_b_conversions = data[1][1]
@@ -260,19 +391,19 @@ if analyze_button:
             more_needed_95 = max(0, required_95 - variant_b_conversions)
             
             if variant_results[0]["is_significant"]:
-                st.markdown(f"✅ **Variant B shows statistically significant improvement** with {variant_results[0]['confidence']}% confidence.")
-                st.markdown(f"📈 Conversion rate improved by {variant_results[0]['uplift']}%.")
+                st.markdown(f"<p class='status-positive'>✅ <b>Variant B shows statistically significant improvement</b> with {variant_results[0]['confidence']}% confidence.</p>", unsafe_allow_html=True)
+                st.markdown(f"<p class='status-positive'>📈 Conversion rate improved by {variant_results[0]['uplift']}%.</p>", unsafe_allow_html=True)
             else:
-                st.markdown(f"❌ **Not enough evidence** to declare Variant B better.")
-                st.markdown(f"⏳ Need {more_needed_95:,} more conversions to reach 95% confidence.")
+                st.markdown(f"<p class='status-negative'>❌ <b>Not enough evidence</b> to declare Variant B better.</p>", unsafe_allow_html=True)
+                st.markdown(f"<p class='status-neutral'>⏳ Need {more_needed_95:,} more conversions to reach 95% confidence.</p>", unsafe_allow_html=True)
                 
             # Show tips based on current results
             if variant_results[0]["uplift"] < 0:
-                st.markdown("⚠️ **Warning:** Variant B is performing worse than control.")
+                st.markdown("<p class='status-negative'>⚠️ <b>Warning:</b> Variant B is performing worse than control.</p>", unsafe_allow_html=True)
             elif variant_results[0]["confidence"] < 90:
-                st.markdown("💡 **Consider:** Continue the test to gather more data.")
+                st.markdown("<p class='status-neutral'>💡 <b>Consider:</b> Continue the test to gather more data.</p>", unsafe_allow_html=True)
         else:
-            st.markdown("Please add at least one variant besides control to see insights.")
+            st.markdown("<p>Please add at least one variant besides control to see insights.</p>", unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -327,3 +458,33 @@ if analyze_button:
         - **Consider practical significance** alongside statistical significance
         - **Segment your results** to discover if the change affects some user groups differently
         """)
+
+# Add JavaScript code to detect screen size and set a session state variable
+# This helps with responsive design
+st.markdown("""
+<script>
+    // Set screen width in session state for responsive design
+    const screenWidth = window.innerWidth;
+    const key = 'screen_width';
+    const value = screenWidth;
+    
+    // Using setTimeout to ensure this runs after Streamlit is fully loaded
+    setTimeout(() => {
+        window.parent.postMessage({
+            type: "streamlit:setComponentValue",
+            key: key,
+            value: value,
+        }, "*");
+    }, 100);
+    
+    // Listen for window resize events
+    window.addEventListener('resize', function() {
+        const newWidth = window.innerWidth;
+        window.parent.postMessage({
+            type: "streamlit:setComponentValue",
+            key: key,
+            value: newWidth,
+        }, "*");
+    });
+</script>
+""", unsafe_allow_html=True)
