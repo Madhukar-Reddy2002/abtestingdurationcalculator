@@ -2,7 +2,6 @@ import streamlit as st
 import numpy as np
 from scipy.stats import norm
 import pandas as pd
-import plotly.express as px
 
 # --- Function to calculate significance ---
 def calculate_significance(conv_a, n_a, conv_b, n_b):
@@ -16,6 +15,21 @@ def calculate_significance(conv_a, n_a, conv_b, n_b):
     confidence = (1 - p_value) * 100
     uplift = ((p_b - p_a) / p_a) * 100
     return round(confidence, 2), round(p_a * 100, 2), round(p_b * 100, 2), round(uplift, 2)
+
+# --- Reverse engineer required conversions ---
+def required_conversions(n_a, conv_a, n_b, target_confidence):
+    p_a = conv_a / n_a
+    min_conv_needed = 0
+    for conv_b in range(n_b + 1):
+        p_b = conv_b / n_b
+        p_pool = (conv_a + conv_b) / (n_a + n_b)
+        se = np.sqrt(p_pool * (1 - p_pool) * (1/n_a + 1/n_b))
+        z = (p_b - p_a) / se
+        p_value = 1 - norm.cdf(abs(z))
+        confidence = (1 - p_value) * 100
+        if confidence >= target_confidence:
+            return conv_b
+    return None
 
 # --- Sidebar ---
 st.sidebar.title("A/B Test Settings")
@@ -72,8 +86,26 @@ if st.button("Calculate"):
             "Confidence (%)": confidence,
             "Statistically Significant": "✅ Yes" if confidence >= 95 else "❌ No"
         })
+
+    df = pd.DataFrame(rows)
+    st.dataframe(df)
+
+    # Table for required conversions
+    st.subheader("🔄 How Many Conversions Do We Need for Significance?")
+    control_visitors, control_conversions = data[0]
+    for i in range(1, num_variants):
+        st.markdown(f"**Variant {chr(65 + i)} (vs Control)**")
+        variant_visitors, _ = data[i]
+        significance_levels = [85, 90, 92, 95]
+        result_rows = []
+        for sig in significance_levels:
+            conv_needed = required_conversions(control_visitors, control_conversions, variant_visitors, sig)
+            result_rows.append({"Target Confidence (%)": sig, "Required Conversions": conv_needed})
+        result_df = pd.DataFrame(result_rows)
+        st.table(result_df)
+
     # Explanation of formula (shown by default)
-    with st.expander("📘 How Do We Calculate Significance? (Open to Learn More)"):
+    with st.expander("📘 How Do We Calculate Significance? (Open to Learn More)", expanded=True):
         st.markdown("""
         We use a **Z-test for proportions** – a statistical method that tells us whether the difference between two conversion rates is **real or just due to random chance**.
 
@@ -99,18 +131,6 @@ if st.button("Calculate"):
 
         If confidence ≥ 95%, you can be pretty sure your result is significant! ✅
         """)
-    df = pd.DataFrame(rows)
-    st.dataframe(df)
-
-    # Bar chart of conversion rates
-    chart_data = pd.DataFrame({
-        "Variant": [row["Variant"] for row in rows],
-        "Conversion Rate (%)": [row["Conversion Rate (%)"] for row in rows]
-    })
-
-    fig = px.bar(chart_data, x="Variant", y="Conversion Rate (%)", color="Variant", text="Conversion Rate (%)")
-    st.plotly_chart(fig)
-
 
     with st.expander("💡 Extra Tips for Better A/B Testing"):
         st.markdown("""
