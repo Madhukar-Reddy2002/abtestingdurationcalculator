@@ -17,7 +17,7 @@ def calculate_significance(conv_a, n_a, conv_b, n_b):
     return round(confidence, 2), round(p_a * 100, 2), round(p_b * 100, 2), round(uplift, 2)
 
 # --- Function to calculate required conversions for different significance levels ---
-def calculate_required_conversions(n_a, p_a, significance_level):
+def calculate_required_conversions(n_a, conv_a, n_b, significance_level):
     # Z-scores for various significance levels
     z_scores = {
         85: 1.44,
@@ -30,11 +30,22 @@ def calculate_required_conversions(n_a, p_a, significance_level):
         return "Invalid significance level"
     
     z = z_scores[significance_level]
-    p_pool = p_a  # Control conversion rate (p_a)
+    p_a = conv_a / n_a  # Control conversion rate
     
-    # Reverse engineer the formula to calculate the number of required conversions in variant B
-    required_conv_b = n_a * p_pool * (1 - p_pool) * z**2 / (significance_level * 0.01)**2
-    return int(required_conv_b)
+    # Calculate minimum detectable effect (MDE)
+    # For a given significance level and control conversion rate
+    # This is the minimum uplift needed to achieve statistical significance
+    
+    # Standard error for equal sized groups
+    se = np.sqrt(p_a * (1 - p_a) * (2 / n_b))
+    
+    # Minimum conversion rate needed for variant to be significant
+    min_p_b = p_a + z * se
+    
+    # Required conversions in variant B
+    required_conv_b = min_p_b * n_b
+    
+    return int(np.ceil(required_conv_b))
 
 # --- Sidebar ---
 st.sidebar.title("A/B Test Settings")
@@ -97,17 +108,31 @@ if st.button("Calculate"):
 
     # --- Calculate the number of conversions needed for each significance level ---
     st.subheader("💡 Required Conversions for Different Significance Levels")
-    control_p = control_conversions / control_visitors
     
     significance_levels = [85, 90, 92, 95]
     required_conversions = []
     
-    for level in significance_levels:
-        required = calculate_required_conversions(control_visitors, control_p, level)
-        required_conversions.append({"Significance Level": f"{level}%", "Required Conversions": required})
+    # Use the first variant after control for calculations
+    if len(data) > 1:
+        variant_visitors = data[1][0]  # Get visitors for variant B
+        
+        for level in significance_levels:
+            required = calculate_required_conversions(
+                control_visitors, 
+                control_conversions, 
+                variant_visitors,  # Keep traffic constant
+                level
+            )
+            required_conversions.append({
+                "Significance Level": f"{level}%", 
+                "Required Conversions": required,
+                "Required Conv. Rate (%)": round((required / variant_visitors) * 100, 2)
+            })
 
-    required_df = pd.DataFrame(required_conversions)
-    st.dataframe(required_df)
+        required_df = pd.DataFrame(required_conversions)
+        st.dataframe(required_df)
+    else:
+        st.warning("Add at least one variant besides the control to see required conversions.")
 
     # Explanation of formula (shown by default)
     with st.expander("📘 How Do We Calculate Significance? (Open to Learn More)", expanded=True):
@@ -141,6 +166,24 @@ if st.button("Calculate"):
         st.markdown("""
         - ✅ **Wait for enough data** before making decisions.
         - 🎯 Try reaching **at least 95% confidence**.
-        - 🧠 Don’t focus only on uplift — check sample sizes and error margins too!
+        - 🧠 Don't focus only on uplift — check sample sizes and error margins too!
         - 📊 Visuals help, but always trust the numbers!
+        """)
+        
+    with st.expander("🧮 How Required Conversions Are Calculated"):
+        st.markdown("""
+        The "Required Conversions" calculation shows **how many conversions your variant would need** to reach the specified significance level, assuming:
+        
+        1. The control conversion rate stays the same
+        2. The variant visitor count stays the same
+        3. You want to detect a positive improvement
+        
+        ### The calculation:
+        
+        1. We use the Z-score for the desired confidence level
+        2. Calculate the standard error based on the control conversion rate
+        3. Determine the minimum conversion rate needed to achieve significance
+        4. Convert this rate to the number of conversions needed
+        
+        This helps you estimate how many more conversions you need to wait for before making a decision!
         """)
