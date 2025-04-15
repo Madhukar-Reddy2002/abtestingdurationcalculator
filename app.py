@@ -22,7 +22,8 @@ st.sidebar.title("A/B Test Settings")
 num_variants = st.sidebar.number_input("Number of Variants (including Control)", min_value=2, max_value=4, value=2, step=1)
 
 st.title("📊 A/B Test Statistical Significance Calculator")
-st.markdown("""Enter the number of visitors and conversions for each variant below. 
+st.markdown("""
+Enter the number of visitors and conversions for each variant below. 
 We'll calculate conversion rates, uplift, and statistical significance.
 """)
 
@@ -33,9 +34,9 @@ for i in range(num_variants):
     st.subheader(f"Variant {'A (Control)' if i == 0 else chr(65 + i)}")
     col1, col2 = st.columns(2)
     with col1:
-        visitors = st.number_input(f"Enter visitors for Variant {'A' if i == 0 else chr(65 + i)}", min_value=1, key=f"visitors_{i}")
+        visitors = st.number_input(f"Visitors for Variant {'A' if i == 0 else chr(65 + i)}", min_value=1, key=f"visitors_{i}")
     with col2:
-        conversions = st.number_input(f"Enter conversions for Variant {'A' if i == 0 else chr(65 + i)}", min_value=0, key=f"conversions_{i}")
+        conversions = st.number_input(f"Conversions for Variant {'A' if i == 0 else chr(65 + i)}", min_value=0, key=f"conversions_{i}")
     data.append((visitors, conversions))
 
 # --- Results ---
@@ -44,7 +45,17 @@ if st.button("Calculate"):
     control_visitors, control_conversions = data[0]
     control_rate = round((control_conversions / control_visitors) * 100, 2)
 
-    results = []
+    rows = [
+        {
+            "Variant": "A (Control)",
+            "Visitors": control_visitors,
+            "Conversions": control_conversions,
+            "Conversion Rate (%)": control_rate,
+            "Uplift (%)": "-",
+            "Confidence (%)": "-",
+            "Statistically Significant": "-"
+        }
+    ]
 
     for i in range(1, num_variants):
         variant_visitors, variant_conversions = data[i]
@@ -52,56 +63,60 @@ if st.button("Calculate"):
             control_conversions, control_visitors,
             variant_conversions, variant_visitors
         )
-        results.append({
+        rows.append({
             "Variant": f"{chr(65 + i)}",
-            "Control Visitors": control_visitors,
-            "Control Conversions": control_conversions,
-            "Control Rate (%)": rate_a,
-            "Variant Visitors": variant_visitors,
-            "Variant Conversions": variant_conversions,
-            "Variant Rate (%)": rate_b,
+            "Visitors": variant_visitors,
+            "Conversions": variant_conversions,
+            "Conversion Rate (%)": rate_b,
             "Uplift (%)": uplift,
             "Confidence (%)": confidence,
             "Statistically Significant": "✅ Yes" if confidence >= 95 else "❌ No"
         })
 
-    df = pd.DataFrame(results)
+    df = pd.DataFrame(rows)
     st.dataframe(df)
 
     # Bar chart of conversion rates
     chart_data = pd.DataFrame({
-        "Variant": ["A (Control)"] + [r["Variant"] for r in results],
-        "Conversion Rate (%)": [control_rate] + [r["Variant Rate (%)"] for r in results]
+        "Variant": [row["Variant"] for row in rows],
+        "Conversion Rate (%)": [row["Conversion Rate (%)"] for row in rows]
     })
 
     fig = px.bar(chart_data, x="Variant", y="Conversion Rate (%)", color="Variant", text="Conversion Rate (%)")
     st.plotly_chart(fig)
 
-    # Explanation of formula
-    with st.expander("📘 How We Calculate Significance (Click to Learn)"):
+    # Explanation of formula (shown by default)
+    with st.expander("📘 How Do We Calculate Significance? (Open to Learn More)", expanded=True):
         st.markdown("""
-        We use a **Z-test for proportions**, a classic statistics method to compare whether your A/B test results are meaningfully different or just due to randomness.
+        We use a **Z-test for proportions** – a statistical method that tells us whether the difference between two conversion rates is **real or just due to random chance**.
 
-        #### 🧮 The Math Made Simple:
+        ### 🔍 The Logic Behind It:
 
-        1. **Average rate (pooled)**:
+        - Imagine you're flipping a coin. If you got 60 heads out of 100, is that lucky or a sign it's not fair?
+        - Same here! We compare the control and variant rates to see if the difference is big **enough** to not be just chance.
+
+        ### 📐 The Formula (Simplified):
+
+        1. **Pooled Rate (combined average):**
            $$ p_{pool} = \frac{conversions_A + conversions_B}{visitors_A + visitors_B} $$
 
-        2. **Standard Error (SE)**: like a "noise level" between the two groups
+        2. **Standard Error (SE):** like the expected "wiggle room"
            $$ SE = \sqrt{p_{pool}(1 - p_{pool})\left(\frac{1}{visitors_A} + \frac{1}{visitors_B}\right)} $$
 
-        3. **Z-score** = how many SEs away the difference is
+        3. **Z-score:**
            $$ Z = \frac{rate_B - rate_A}{SE} $$
 
-        4. **Confidence %** is derived from the Z-score.
+        4. **Confidence (%):**
+           - Based on how extreme the Z-score is.
+           - **Higher confidence = more likely the uplift is real!**
 
-        A result is **statistically significant** when confidence ≥ 95%. That means there's less than 5% chance it's due to luck!
+        If confidence ≥ 95%, you can be pretty sure your result is significant! ✅
         """)
 
-    with st.expander("💡 A/B Testing Tips"):
+    with st.expander("💡 Extra Tips for Better A/B Testing"):
         st.markdown("""
-        - ✅ Aim for **95% confidence** or more before acting on results.
-        - 📈 Bigger samples → more reliable results.
-        - 🕐 Don’t end tests early — wait for data!
-        - ⚖️ A small improvement with high confidence is more valuable than a huge one with low certainty.
+        - ✅ **Wait for enough data** before making decisions.
+        - 🎯 Try reaching **at least 95% confidence**.
+        - 🧠 Don’t focus only on uplift — check sample sizes and error margins too!
+        - 📊 Visuals help, but always trust the numbers!
         """)
