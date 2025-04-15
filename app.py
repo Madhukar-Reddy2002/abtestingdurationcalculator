@@ -72,21 +72,8 @@ if st.button("Calculate"):
             "Confidence (%)": confidence,
             "Statistically Significant": "✅ Yes" if confidence >= 95 else "❌ No"
         })
-
-    df = pd.DataFrame(rows)
-    st.dataframe(df)
-
-    # Bar chart of conversion rates
-    chart_data = pd.DataFrame({
-        "Variant": [row["Variant"] for row in rows],
-        "Conversion Rate (%)": [row["Conversion Rate (%)"] for row in rows]
-    })
-
-    fig = px.bar(chart_data, x="Variant", y="Conversion Rate (%)", color="Variant", text="Conversion Rate (%)")
-    st.plotly_chart(fig)
-
     # Explanation of formula (shown by default)
-    with st.expander("📘 How Do We Calculate Significance? (Open to Learn More)", expanded=True):
+    with st.expander("📘 How Do We Calculate Significance? (Open to Learn More)"):
         st.markdown("""
         We use a **Z-test for proportions** – a statistical method that tells us whether the difference between two conversion rates is **real or just due to random chance**.
 
@@ -112,6 +99,18 @@ if st.button("Calculate"):
 
         If confidence ≥ 95%, you can be pretty sure your result is significant! ✅
         """)
+    df = pd.DataFrame(rows)
+    st.dataframe(df)
+
+    # Bar chart of conversion rates
+    chart_data = pd.DataFrame({
+        "Variant": [row["Variant"] for row in rows],
+        "Conversion Rate (%)": [row["Conversion Rate (%)"] for row in rows]
+    })
+
+    fig = px.bar(chart_data, x="Variant", y="Conversion Rate (%)", color="Variant", text="Conversion Rate (%)")
+    st.plotly_chart(fig)
+
 
     with st.expander("💡 Extra Tips for Better A/B Testing"):
         st.markdown("""
