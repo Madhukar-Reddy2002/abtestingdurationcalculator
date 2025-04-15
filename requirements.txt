@@ -1,3 +1,6 @@
 pandas
 plotly
 scipy
+matplotlib
+seaborn
+altair
