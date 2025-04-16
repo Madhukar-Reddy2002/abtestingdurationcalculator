@@ -368,12 +368,6 @@ if analyze_button:
         use_container_width=True
     )
     
-    # Add P-value display
-    if len(variant_results) > 0:
-        st.markdown(f"""
-        **P-value for Variant B:** {variant_results[0]['p_value']}  
-        *A p-value less than 0.05 (5%) corresponds to a confidence level greater than 95%*
-        """)
     
     # Insights Section - No longer side by side with Required Conversions
     st.markdown('<p class="section-header">Key Insights</p>', unsafe_allow_html=True)
