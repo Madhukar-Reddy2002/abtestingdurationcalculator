@@ -266,6 +266,11 @@ with st.sidebar:
 st.markdown('<div class="info-box">', unsafe_allow_html=True)
 st.markdown(f"""
 **Currently using: {test_type} Test** (95% significance threshold)
+
+**When to use each:**
+- Use **One-Tailed** when you're only interested in detecting improvements (common in marketing tests).
+- Use **Two-Tailed** when scientific validity is critical or when negative impacts must be detected.
+""")
 st.markdown('</div>', unsafe_allow_html=True)
 
 # --- Data Input Section ---
