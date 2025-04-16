@@ -22,15 +22,8 @@ st.markdown("""
     /* Enhanced Title Styling */
     .main-header {
         font-size: 2.5rem;
-        font-weight: 800;
-        color: #fff;
-        text-align: center;
-        margin-bottom: 1.5rem;
-        text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
-        background: linear-gradient(90deg, #1565C0, #64B5F6);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        padding: 0.5rem 0;
+        font-weight: 700;
+        color: #1565C0;
     }
     
     /* Enhanced Section Headers */
