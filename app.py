@@ -63,6 +63,15 @@ st.markdown("""
         margin-bottom: 1rem;
     }
     
+    /* Info Box */
+    .info-box {
+        background-color: #f8f9fa;
+        border-left: 5px solid #4CAF50;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    
     /* Mobile Responsiveness */
     @media (max-width: 768px) {
         .main-header {
@@ -74,7 +83,7 @@ st.markdown("""
         .subsection-header {
             font-size: 1.2rem;
         }
-        .insight-box {
+        .insight-box, .info-box {
             padding: 1rem;
         }
         .stDataFrame {
@@ -133,25 +142,74 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- Functions ---
-def calculate_significance(conv_a, n_a, conv_b, n_b):
+def calculate_significance(conv_a, n_a, conv_b, n_b, test_type="one_tailed"):
+    """
+    Calculate statistical significance for A/B test
+    
+    Parameters:
+    - conv_a: Conversions for control
+    - n_a: Visitors for control
+    - conv_b: Conversions for variant
+    - n_b: Visitors for variant
+    - test_type: "one_tailed" or "two_tailed"
+    
+    Returns:
+    - confidence: Confidence level in percent
+    - p_a: Conversion rate for control in percent
+    - p_b: Conversion rate for variant in percent  
+    - uplift: Percentage improvement
+    - p_value: The p-value
+    """
     p_a = conv_a / n_a
     p_b = conv_b / n_b
     p_pool = (conv_a + conv_b) / (n_a + n_b)
 
     se = np.sqrt(p_pool * (1 - p_pool) * (1/n_a + 1/n_b))
     z = (p_b - p_a) / se
-    p_value = 2 * (1 - norm.cdf(abs(z)))  # Two-tailed test
+    
+    # Calculate p-value based on test type
+    if test_type == "one_tailed":
+        # One-tailed test (testing if variant is better)
+        p_value = 1 - norm.cdf(z)
+    else:
+        # Two-tailed test (testing if there's any difference)
+        p_value = 2 * (1 - norm.cdf(abs(z)))
+        
     confidence = (1 - p_value) * 100
     uplift = ((p_b - p_a) / p_a) * 100
     return round(confidence, 2), round(p_a * 100, 2), round(p_b * 100, 2), round(uplift, 2), round(p_value, 4)
 
-def calculate_required_conversions(n_a, conv_a, n_b, significance_level):
-    z_scores = {
+def calculate_required_conversions(n_a, conv_a, n_b, significance_level, test_type="one_tailed"):
+    """
+    Calculate the required conversions to reach significance
+    
+    Parameters:
+    - n_a: Visitors for control
+    - conv_a: Conversions for control
+    - n_b: Visitors for variant
+    - significance_level: The desired confidence level
+    - test_type: "one_tailed" or "two_tailed"
+    
+    Returns:
+    - Required number of conversions
+    """
+    # Z-scores for one-tailed test
+    one_tailed_z_scores = {
+        85: 1.04,
+        90: 1.28,
+        92: 1.41, 
+        95: 1.645
+    }
+    
+    # Z-scores for two-tailed test
+    two_tailed_z_scores = {
         85: 1.44,
         90: 1.645,
         92: 1.75,
         95: 1.96
     }
+    
+    z_scores = one_tailed_z_scores if test_type == "one_tailed" else two_tailed_z_scores
     
     if significance_level not in z_scores:
         return "Invalid significance level"
@@ -171,7 +229,28 @@ st.markdown('<p class="main-header">A/B Test Analyzer</p>', unsafe_allow_html=Tr
 # --- Sidebar with improved styling ---
 with st.sidebar:
     st.markdown('<p class="subsection-header">Test Settings</p>', unsafe_allow_html=True)
+    
+    # Add test type selection
+    test_type = st.radio(
+        "Hypothesis Test Type",
+        ["One-Tailed", "Two-Tailed"],
+        index=0,  # Default to One-Tailed
+        help="One-tailed tests if variant is better. Two-tailed tests if there's any difference."
+    )
+    test_type_value = "one_tailed" if test_type == "One-Tailed" else "two_tailed"
+    
     num_variants = st.number_input("Number of Variants (including Control)", min_value=2, max_value=4, value=2, step=1)
+    
+    significance_threshold = st.slider(
+        "Significance Threshold",
+        min_value=85,
+        max_value=99,
+        value=95,
+        step=1,
+        format="%d%%",
+        help="The confidence level required to declare statistical significance"
+    )
+    
     st.divider()
     with st.expander("About this tool", expanded=False):
         st.markdown("""
@@ -183,6 +262,21 @@ with st.sidebar:
         - **Uplift**: The percentage improvement of the variant over control
         - **Required Conversions**: How many conversions needed to reach statistical significance
         """)
+
+# Add explanation about one-tailed vs two-tailed tests
+st.markdown('<div class="info-box">', unsafe_allow_html=True)
+st.markdown(f"""
+**Currently using: {test_type} Test**
+
+**One-Tailed vs. Two-Tailed Tests:**
+- **One-Tailed Test:** Tests specifically if the variant is *better* than the control. Use when you're only interested in improvements. Typically gives higher confidence levels.
+- **Two-Tailed Test:** Tests if the variant is *different* (better or worse) from control. More conservative and generally considered more scientifically rigorous.
+
+**When to use each:**
+- Use **One-Tailed** when you're only interested in detecting improvements (common in marketing tests).
+- Use **Two-Tailed** when scientific validity is critical or when negative impacts must be detected.
+""")
+st.markdown('</div>', unsafe_allow_html=True)
 
 # --- Data Input Section ---
 st.markdown('<p class="section-header">Test Data Input</p>', unsafe_allow_html=True)
@@ -241,10 +335,11 @@ if analyze_button:
         variant_visitors, variant_conversions = data[i]
         confidence, rate_a, rate_b, uplift, p_value = calculate_significance(
             control_conversions, control_visitors,
-            variant_conversions, variant_visitors
+            variant_conversions, variant_visitors,
+            test_type=test_type_value
         )
         
-        is_significant = confidence >= 95
+        is_significant = confidence >= significance_threshold
         significance_icon = "✅" if is_significant else "❌"
         significance_text = "Significant" if is_significant else "Not Significant"
         
@@ -253,7 +348,8 @@ if analyze_button:
             "conversion_rate": rate_b,
             "uplift": uplift,
             "confidence": confidence,
-            "is_significant": is_significant
+            "is_significant": is_significant,
+            "p_value": p_value
         })
         
         uplift_text = f"{uplift}% (+)" if uplift > 0 else f"{uplift}% (-)"
@@ -284,6 +380,13 @@ if analyze_button:
         hide_index=True,
         use_container_width=True
     )
+    
+    # Add P-value display
+    if len(variant_results) > 0:
+        st.markdown(f"""
+        **P-value for Variant B:** {variant_results[0]['p_value']}  
+        *A p-value less than 0.05 (5%) corresponds to a confidence level greater than 95%*
+        """)
     
     # Visualization with improved styling
     if len(data) > 1:
@@ -353,7 +456,8 @@ if analyze_button:
                     control_visitors, 
                     control_conversions, 
                     variant_visitors,
-                    level
+                    level,
+                    test_type=test_type_value
                 )
                 current_conversions = data[1][1]  # Current conversions for variant B
                 
@@ -380,34 +484,80 @@ if analyze_button:
             variant_b_visitors = data[1][0]
             variant_b_rate = (variant_b_conversions / variant_b_visitors) * 100
             
-            # Get the 95% confidence required conversions
-            required_95 = calculate_required_conversions(
+            # Get the required conversions for the selected significance threshold
+            required_threshold = calculate_required_conversions(
                 control_visitors, 
                 control_conversions, 
                 variant_b_visitors,
-                95
+                significance_threshold,
+                test_type=test_type_value
             )
             
-            more_needed_95 = max(0, required_95 - variant_b_conversions)
+            more_needed_threshold = max(0, required_threshold - variant_b_conversions)
             
             if variant_results[0]["is_significant"]:
-                st.markdown(f"<p class='status-positive'>✅ <b>Variant B shows statistically significant improvement</b> with {variant_results[0]['confidence']}% confidence.</p>", unsafe_allow_html=True)
-                st.markdown(f"<p class='status-positive'>📈 Conversion rate improved by {variant_results[0]['uplift']}%.</p>", unsafe_allow_html=True)
+                significance_phrase = "better than" if test_type == "One-Tailed" else "different from"
+                st.markdown(f"<p class='status-positive'>✅ <b>Variant B is statistically {significance_phrase} Control</b> with {variant_results[0]['confidence']}% confidence ({test_type} test).</p>", unsafe_allow_html=True)
+                st.markdown(f"<p class='status-positive'>📈 Conversion rate {'improved' if variant_results[0]['uplift'] > 0 else 'decreased'} by {abs(variant_results[0]['uplift'])}%.</p>", unsafe_allow_html=True)
             else:
-                st.markdown(f"<p class='status-negative'>❌ <b>Not enough evidence</b> to declare Variant B better.</p>", unsafe_allow_html=True)
-                st.markdown(f"<p class='status-neutral'>⏳ Need {more_needed_95:,} more conversions to reach 95% confidence.</p>", unsafe_allow_html=True)
+                significance_phrase = "improvement over" if test_type == "One-Tailed" else "difference from"
+                st.markdown(f"<p class='status-negative'>❌ <b>Not enough evidence</b> to declare statistical {significance_phrase} Control.</p>", unsafe_allow_html=True)
+                st.markdown(f"<p class='status-neutral'>⏳ Need {more_needed_threshold:,} more conversions to reach {significance_threshold}% confidence.</p>", unsafe_allow_html=True)
                 
             # Show tips based on current results
             if variant_results[0]["uplift"] < 0:
-                st.markdown("<p class='status-negative'>⚠️ <b>Warning:</b> Variant B is performing worse than control.</p>", unsafe_allow_html=True)
+                warning_text = "Variant B is performing worse than control." if test_type == "Two-Tailed" else "Variant B is performing worse than control, which contradicts the one-tailed test assumption."
+                st.markdown(f"<p class='status-negative'>⚠️ <b>Warning:</b> {warning_text}</p>", unsafe_allow_html=True)
             elif variant_results[0]["confidence"] < 90:
                 st.markdown("<p class='status-neutral'>💡 <b>Consider:</b> Continue the test to gather more data.</p>", unsafe_allow_html=True)
+            
+            # Add information about test type impact
+            if test_type == "One-Tailed":
+                two_tailed_conf, _, _, _, _ = calculate_significance(
+                    control_conversions, control_visitors,
+                    variant_b_conversions, variant_b_visitors,
+                    test_type="two_tailed"
+                )
+                st.markdown(f"<p>🔄 With a <b>Two-Tailed</b> test, confidence would be {two_tailed_conf}%.</p>", unsafe_allow_html=True)
+            else:
+                one_tailed_conf, _, _, _, _ = calculate_significance(
+                    control_conversions, control_visitors,
+                    variant_b_conversions, variant_b_visitors,
+                    test_type="one_tailed"
+                )
+                st.markdown(f"<p>🔄 With a <b>One-Tailed</b> test, confidence would be {one_tailed_conf}%.</p>", unsafe_allow_html=True)
         else:
             st.markdown("<p>Please add at least one variant besides control to see insights.</p>", unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
 
     # Information Sections (All Collapsed by Default)
+    with st.expander("One-Tailed vs. Two-Tailed Tests Explained", expanded=False):
+        st.markdown("""
+        ### The Difference Between One-Tailed and Two-Tailed Tests
+
+        #### One-Tailed Test
+        - **Tests the hypothesis:** "The variant performs *better* than the control"
+        - **Use when:** You only care if your changes improve the metric, not if they make it worse
+        - **Advantages:** Higher statistical power, requires smaller sample size
+        - **Disadvantages:** Cannot detect negative effects, less scientifically rigorous
+        - **Common in:** Marketing optimization, where you're only interested in improvements
+
+        #### Two-Tailed Test
+        - **Tests the hypothesis:** "The variant performs *differently* (better or worse) than the control"
+        - **Use when:** You need to know if your changes had any effect, positive or negative
+        - **Advantages:** More scientifically rigorous, detects both positive and negative effects
+        - **Disadvantages:** Requires larger sample size, harder to reach significance
+        - **Common in:** Scientific research, product safety tests, when negative impacts are important
+
+        #### Mathematical Difference
+        For the same data, a one-tailed test will show higher confidence than a two-tailed test because:
+        - One-tailed p-value = (area in one tail)
+        - Two-tailed p-value = 2 × (area in one tail) = 2 × (one-tailed p-value)
+
+        **Rule of thumb:** If your goal is pure optimization and you're only interested in positive improvements, a one-tailed test may be appropriate. For more rigorous scientific testing, use two-tailed tests.
+        """)
+
     with st.expander("How Statistical Significance Works", expanded=False):
         st.markdown("""
         Statistical significance in A/B testing determines whether the observed differences between variants are real or just due to random chance.
