@@ -195,18 +195,24 @@ def calculate_required_conversions(n_a, conv_a, n_b, significance_level, test_ty
     """
     # Z-scores for one-tailed test
     one_tailed_z_scores = {
+        80: 0.84,
         85: 1.04,
         90: 1.28,
         92: 1.41, 
-        95: 1.645
+        95: 1.645,
+        97: 1.88,
+        99: 2.33
     }
     
     # Z-scores for two-tailed test
     two_tailed_z_scores = {
+        80: 1.28,
         85: 1.44,
         90: 1.645,
         92: 1.75,
-        95: 1.96
+        95: 1.96,
+        97: 2.17,
+        99: 2.58
     }
     
     z_scores = one_tailed_z_scores if test_type == "one_tailed" else two_tailed_z_scores
@@ -241,15 +247,8 @@ with st.sidebar:
     
     num_variants = st.number_input("Number of Variants (including Control)", min_value=2, max_value=4, value=2, step=1)
     
-    significance_threshold = st.slider(
-        "Significance Threshold",
-        min_value=85,
-        max_value=99,
-        value=95,
-        step=1,
-        format="%d%%",
-        help="The confidence level required to declare statistical significance"
-    )
+    # Set significance threshold to fixed 95%
+    significance_threshold = 95
     
     st.divider()
     with st.expander("About this tool", expanded=False):
@@ -266,12 +265,7 @@ with st.sidebar:
 # Add explanation about one-tailed vs two-tailed tests
 st.markdown('<div class="info-box">', unsafe_allow_html=True)
 st.markdown(f"""
-**Currently using: {test_type} Test**
-
-**When to use each:**
-- Use **One-Tailed** when you're only interested in detecting improvements (common in marketing tests).
-- Use **Two-Tailed** when scientific validity is critical or when negative impacts must be detected.
-""")
+**Currently using: {test_type} Test** (95% significance threshold)
 st.markdown('</div>', unsafe_allow_html=True)
 
 # --- Data Input Section ---
@@ -384,111 +378,125 @@ if analyze_button:
         *A p-value less than 0.05 (5%) corresponds to a confidence level greater than 95%*
         """)
     
-   
-    # Required Conversions Section with improved responsiveness
+    # Insights Section - No longer side by side with Required Conversions
+    st.markdown('<p class="section-header">Key Insights</p>', unsafe_allow_html=True)
+    st.markdown('<div class="insight-box">', unsafe_allow_html=True)
+    
+    if len(data) > 1:
+        variant_b_conversions = data[1][1]
+        variant_b_visitors = data[1][0]
+        variant_b_rate = (variant_b_conversions / variant_b_visitors) * 100
+        
+        # Get the required conversions for the selected significance threshold
+        required_threshold = calculate_required_conversions(
+            control_visitors, 
+            control_conversions, 
+            variant_b_visitors,
+            significance_threshold,
+            test_type=test_type_value
+        )
+        
+        more_needed_threshold = max(0, required_threshold - variant_b_conversions)
+        
+        if variant_results[0]["is_significant"]:
+            significance_phrase = "better than" if test_type == "One-Tailed" else "different from"
+            st.markdown(f"<p class='status-positive'>✅ <b>Variant B is statistically {significance_phrase} Control</b> with {variant_results[0]['confidence']}% confidence ({test_type} test).</p>", unsafe_allow_html=True)
+            st.markdown(f"<p class='status-positive'>📈 Conversion rate {'improved' if variant_results[0]['uplift'] > 0 else 'decreased'} by {abs(variant_results[0]['uplift'])}%.</p>", unsafe_allow_html=True)
+        else:
+            significance_phrase = "improvement over" if test_type == "One-Tailed" else "difference from"
+            st.markdown(f"<p class='status-negative'>❌ <b>Not enough evidence</b> to declare statistical {significance_phrase} Control.</p>", unsafe_allow_html=True)
+            st.markdown(f"<p class='status-neutral'>⏳ Need {more_needed_threshold:,} more conversions to reach {significance_threshold}% confidence.</p>", unsafe_allow_html=True)
+            
+        # Show tips based on current results
+        if variant_results[0]["uplift"] < 0:
+            warning_text = "Variant B is performing worse than control." if test_type == "Two-Tailed" else "Variant B is performing worse than control, which contradicts the one-tailed test assumption."
+            st.markdown(f"<p class='status-negative'>⚠️ <b>Warning:</b> {warning_text}</p>", unsafe_allow_html=True)
+        elif variant_results[0]["confidence"] < 90:
+            st.markdown("<p class='status-neutral'>💡 <b>Consider:</b> Continue the test to gather more data.</p>", unsafe_allow_html=True)
+        
+        # Add information about test type impact
+        if test_type == "One-Tailed":
+            two_tailed_conf, _, _, _, _ = calculate_significance(
+                control_conversions, control_visitors,
+                variant_b_conversions, variant_b_visitors,
+                test_type="two_tailed"
+            )
+            st.markdown(f"<p>🔄 With a <b>Two-Tailed</b> test, confidence would be {two_tailed_conf}%.</p>", unsafe_allow_html=True)
+        else:
+            one_tailed_conf, _, _, _, _ = calculate_significance(
+                control_conversions, control_visitors,
+                variant_b_conversions, variant_b_visitors,
+                test_type="one_tailed"
+            )
+            st.markdown(f"<p>🔄 With a <b>One-Tailed</b> test, confidence would be {one_tailed_conf}%.</p>", unsafe_allow_html=True)
+    else:
+        st.markdown("<p>Please add at least one variant besides control to see insights.</p>", unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Required Conversions Section - Now as a separate full-width section
     st.markdown('<p class="section-header">Required Conversions Analysis</p>', unsafe_allow_html=True)
     
-    # Use a dynamic column layout that works better on mobile
-    if st.session_state.get('screen_width', 1000) < 768:
-        # Stack columns on mobile
-        cols = st.columns([1])
-        insights_col = cols[0]
-        required_col = cols[0]
-    else:
-        # Side by side on desktop
-        cols = st.columns([1])
-        insights_col = cols[0]
-        required_col = cols[0]
-    
-    with required_col:
-        if len(data) > 1:
-            st.markdown('<p class="subsection-header">Conversions Required for Significance</p>', unsafe_allow_html=True)
-            
-            # Calculate required conversions for each significance level
-            significance_levels = [85, 90, 92, 95]
-            required_conversions = []
-            
-            variant_visitors = data[1][0]  # Get visitors for variant B
-            
-            for level in significance_levels:
-                required = calculate_required_conversions(
-                    control_visitors, 
-                    control_conversions, 
-                    variant_visitors,
-                    level,
-                    test_type=test_type_value
-                )
-                current_conversions = data[1][1]  # Current conversions for variant B
-                
-                # Calculate how many more conversions are needed
-                more_needed = max(0, required - current_conversions)
-                
-                required_conversions.append({
-                    "Confidence Level": f"{level}%", 
-                    "Required Conversions": f"{required:,}",
-                    "Current Conversions": f"{current_conversions:,}",
-                    "Additional Needed": f"{more_needed:,}",
-                    "Required Conv. Rate": f"{round((required / variant_visitors) * 100, 2)}%"
-                })
-
-            required_df = pd.DataFrame(required_conversions)
-            st.dataframe(required_df, hide_index=True, use_container_width=True)
-    
-    with insights_col:
-        st.markdown('<div class="insight-box">', unsafe_allow_html=True)
-        st.markdown('<p class="subsection-header">Key Insights</p>', unsafe_allow_html=True)
+    if len(data) > 1:
+        st.markdown('<p class="subsection-header">Conversions Required for Significance</p>', unsafe_allow_html=True)
         
-        if len(data) > 1:
-            variant_b_conversions = data[1][1]
-            variant_b_visitors = data[1][0]
-            variant_b_rate = (variant_b_conversions / variant_b_visitors) * 100
-            
-            # Get the required conversions for the selected significance threshold
-            required_threshold = calculate_required_conversions(
+        # Calculate required conversions for extended significance levels
+        significance_levels = [80, 85, 90, 92, 95, 97, 99]
+        required_conversions = []
+        
+        variant_visitors = data[1][0]  # Get visitors for variant B
+        
+        for level in significance_levels:
+            required = calculate_required_conversions(
                 control_visitors, 
                 control_conversions, 
-                variant_b_visitors,
-                significance_threshold,
+                variant_visitors,
+                level,
                 test_type=test_type_value
             )
+            current_conversions = data[1][1]  # Current conversions for variant B
             
-            more_needed_threshold = max(0, required_threshold - variant_b_conversions)
+            # Calculate how many more conversions are needed
+            more_needed = max(0, required - current_conversions)
             
-            if variant_results[0]["is_significant"]:
-                significance_phrase = "better than" if test_type == "One-Tailed" else "different from"
-                st.markdown(f"<p class='status-positive'>✅ <b>Variant B is statistically {significance_phrase} Control</b> with {variant_results[0]['confidence']}% confidence ({test_type} test).</p>", unsafe_allow_html=True)
-                st.markdown(f"<p class='status-positive'>📈 Conversion rate {'improved' if variant_results[0]['uplift'] > 0 else 'decreased'} by {abs(variant_results[0]['uplift'])}%.</p>", unsafe_allow_html=True)
-            else:
-                significance_phrase = "improvement over" if test_type == "One-Tailed" else "difference from"
-                st.markdown(f"<p class='status-negative'>❌ <b>Not enough evidence</b> to declare statistical {significance_phrase} Control.</p>", unsafe_allow_html=True)
-                st.markdown(f"<p class='status-neutral'>⏳ Need {more_needed_threshold:,} more conversions to reach {significance_threshold}% confidence.</p>", unsafe_allow_html=True)
-                
-            # Show tips based on current results
-            if variant_results[0]["uplift"] < 0:
-                warning_text = "Variant B is performing worse than control." if test_type == "Two-Tailed" else "Variant B is performing worse than control, which contradicts the one-tailed test assumption."
-                st.markdown(f"<p class='status-negative'>⚠️ <b>Warning:</b> {warning_text}</p>", unsafe_allow_html=True)
-            elif variant_results[0]["confidence"] < 90:
-                st.markdown("<p class='status-neutral'>💡 <b>Consider:</b> Continue the test to gather more data.</p>", unsafe_allow_html=True)
-            
-            # Add information about test type impact
-            if test_type == "One-Tailed":
-                two_tailed_conf, _, _, _, _ = calculate_significance(
-                    control_conversions, control_visitors,
-                    variant_b_conversions, variant_b_visitors,
-                    test_type="two_tailed"
-                )
-                st.markdown(f"<p>🔄 With a <b>Two-Tailed</b> test, confidence would be {two_tailed_conf}%.</p>", unsafe_allow_html=True)
-            else:
-                one_tailed_conf, _, _, _, _ = calculate_significance(
-                    control_conversions, control_visitors,
-                    variant_b_conversions, variant_b_visitors,
-                    test_type="one_tailed"
-                )
-                st.markdown(f"<p>🔄 With a <b>One-Tailed</b> test, confidence would be {one_tailed_conf}%.</p>", unsafe_allow_html=True)
-        else:
-            st.markdown("<p>Please add at least one variant besides control to see insights.</p>", unsafe_allow_html=True)
+            required_conversions.append({
+                "Confidence Level": f"{level}%", 
+                "Required Conversions": f"{required:,}",
+                "Current Conversions": f"{current_conversions:,}",
+                "Additional Needed": f"{more_needed:,}",
+                "Required Conv. Rate": f"{round((required / variant_visitors) * 100, 2)}%"
+            })
+
+        required_df = pd.DataFrame(required_conversions)
+        st.dataframe(required_df, hide_index=True, use_container_width=True)
+
+        # Create a visual representation of required conversions
+        st.markdown('<p class="subsection-header">Required Conversions Chart</p>', unsafe_allow_html=True)
         
-        st.markdown('</div>', unsafe_allow_html=True)
+        chart_data = pd.DataFrame({
+            'Confidence Level': [level['Confidence Level'] for level in required_conversions],
+            'Required Conversions': [int(level['Required Conversions'].replace(',', '')) for level in required_conversions],
+            'Current Conversions': [int(level['Current Conversions'].replace(',', '')) for level in required_conversions]
+        })
+        
+        # Create a Streamlit bar chart for required conversions
+        chart = alt.Chart(chart_data).transform_fold(
+            ['Required Conversions', 'Current Conversions'],
+            as_=['Metric', 'Value']
+        ).mark_bar().encode(
+            x=alt.X('Confidence Level:N', sort=None),
+            y=alt.Y('Value:Q'),
+            color=alt.Color('Metric:N', scale=alt.Scale(
+                domain=['Required Conversions', 'Current Conversions'],
+                range=['#1976D2', '#4CAF50']
+            )),
+            tooltip=['Confidence Level', 'Metric', 'Value']
+        ).properties(
+            title='Conversions Required vs. Current by Confidence Level',
+            height=300
+        )
+        
+        st.altair_chart(chart, use_container_width=True)
 
     # Information Sections (All Collapsed by Default)
     with st.expander("One-Tailed vs. Two-Tailed Tests Explained", expanded=False):
@@ -549,7 +557,7 @@ if analyze_button:
 
         ### The Process:
         
-        1. We use the Z-score for the desired confidence level
+        1. We use the Z-score for the desired confidence level (80%, 85%, 90%, 92%, 95%, 97%, 99%)
         2. Calculate the standard error based on the control conversion rate
         3. Determine the minimum conversion rate needed to achieve significance
         4. Convert this rate to the number of conversions needed
