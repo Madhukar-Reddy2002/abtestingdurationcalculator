@@ -222,8 +222,7 @@ def calculate_required_conversions(n_a, conv_a, n_b, significance_level, test_ty
     
     return int(np.ceil(required_conv_b))
 
-# --- Main Layout ---
-st.markdown('<p class="main-header">A/B Test Analyzer</p>', unsafe_allow_html=True)
+
 
 # --- Sidebar with improved styling ---
 with st.sidebar:
@@ -254,9 +253,9 @@ with st.sidebar:
         - **Uplift**: The percentage improvement of the variant over control
         - **Required Conversions**: How many conversions needed to reach statistical significance
         """)
-
+# --- Main Layout ---
+st.markdown('<p class="main-header">A/B Test Analyzer</p>', unsafe_allow_html=True)
 # Add explanation about one-tailed vs two-tailed tests
-st.markdown('<div class="info-box">', unsafe_allow_html=True)
 st.markdown(f"""
 **Currently using: {test_type} Test** (95% significance threshold)
 
