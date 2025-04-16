@@ -467,34 +467,7 @@ if analyze_button:
         required_df = pd.DataFrame(required_conversions)
         st.dataframe(required_df, hide_index=True, use_container_width=True)
 
-        # Create a visual representation of required conversions
-        st.markdown('<p class="subsection-header">Required Conversions Chart</p>', unsafe_allow_html=True)
         
-        chart_data = pd.DataFrame({
-            'Confidence Level': [level['Confidence Level'] for level in required_conversions],
-            'Required Conversions': [int(level['Required Conversions'].replace(',', '')) for level in required_conversions],
-            'Current Conversions': [int(level['Current Conversions'].replace(',', '')) for level in required_conversions]
-        })
-        
-        # Create a Streamlit bar chart for required conversions
-        chart = alt.Chart(chart_data).transform_fold(
-            ['Required Conversions', 'Current Conversions'],
-            as_=['Metric', 'Value']
-        ).mark_bar().encode(
-            x=alt.X('Confidence Level:N', sort=None),
-            y=alt.Y('Value:Q'),
-            color=alt.Color('Metric:N', scale=alt.Scale(
-                domain=['Required Conversions', 'Current Conversions'],
-                range=['#1976D2', '#4CAF50']
-            )),
-            tooltip=['Confidence Level', 'Metric', 'Value']
-        ).properties(
-            title='Conversions Required vs. Current by Confidence Level',
-            height=300
-        )
-        
-        st.altair_chart(chart, use_container_width=True)
-
     # Information Sections (All Collapsed by Default)
     with st.expander("One-Tailed vs. Two-Tailed Tests Explained", expanded=False):
         st.markdown("""
