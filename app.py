@@ -268,10 +268,6 @@ st.markdown('<div class="info-box">', unsafe_allow_html=True)
 st.markdown(f"""
 **Currently using: {test_type} Test**
 
-**One-Tailed vs. Two-Tailed Tests:**
-- **One-Tailed Test:** Tests specifically if the variant is *better* than the control. Use when you're only interested in improvements. Typically gives higher confidence levels.
-- **Two-Tailed Test:** Tests if the variant is *different* (better or worse) from control. More conservative and generally considered more scientifically rigorous.
-
 **When to use each:**
 - Use **One-Tailed** when you're only interested in detecting improvements (common in marketing tests).
 - Use **Two-Tailed** when scientific validity is critical or when negative impacts must be detected.
@@ -388,46 +384,7 @@ if analyze_button:
         *A p-value less than 0.05 (5%) corresponds to a confidence level greater than 95%*
         """)
     
-    # Visualization with improved styling
-    if len(data) > 1:
-        st.markdown('<p class="section-header">Visualization</p>', unsafe_allow_html=True)
-        
-        # Conversion Rate Chart
-        chart_data = pd.DataFrame({
-            'Variant': [row["Variant"] for row in rows],
-            'Conversion Rate': [float(row["Conversion Rate"].replace("%", "")) for row in rows]
-        })
-        
-        # Enhanced styling for the chart
-        conversion_chart = alt.Chart(chart_data).mark_bar().encode(
-            x=alt.X('Variant', sort=None, title='Variant'),
-            y=alt.Y('Conversion Rate', title='Conversion Rate (%)'),
-            color=alt.condition(
-                alt.datum.Variant == 'A (Control)',
-                alt.value('#1976D2'),  # Control color
-                alt.value('#4CAF50')   # Variant color
-            ),
-            tooltip=['Variant', 'Conversion Rate']
-        ).properties(
-            title={
-                'text': 'Conversion Rate by Variant',
-                'fontSize': 20,
-                'fontWeight': 'bold',
-                'color': '#1976D2'
-            },
-            width='container',
-            height=300
-        ).configure_axis(
-            labelFontSize=12,
-            titleFontSize=14,
-            titleFontWeight='bold'
-        ).configure_title(
-            fontSize=16,
-            fontWeight='bold'
-        )
-        
-        st.altair_chart(conversion_chart, use_container_width=True)
-    
+   
     # Required Conversions Section with improved responsiveness
     st.markdown('<p class="section-header">Required Conversions Analysis</p>', unsafe_allow_html=True)
     
@@ -439,7 +396,9 @@ if analyze_button:
         required_col = cols[0]
     else:
         # Side by side on desktop
-        required_col, insights_col = st.columns([3, 2])
+        cols = st.columns([1])
+        insights_col = cols[0]
+        required_col = cols[0]
     
     with required_col:
         if len(data) > 1:
