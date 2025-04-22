@@ -48,7 +48,7 @@ st.markdown("""
     
     /* Redesigned Insight Box */
     .insight-box {
-        background-color: #f1f8ff;
+        background-color: #232526;
         border-left: 5px solid #1976D2;
         padding: 1.25rem;
         border-radius: 0.5rem;
@@ -58,7 +58,7 @@ st.markdown("""
     
     /* Info Box */
     .info-box {
-        background-color: #f8f9fa;
+        background-color: #232526;
         border-left: 5px solid #4CAF50;
         padding: 1rem;
         border-radius: 0.5rem;
@@ -100,7 +100,7 @@ st.markdown("""
         border-bottom: 1px solid #e0e0e0;
     }
     .custom-dataframe tr:nth-child(even) {
-        background-color: #f5f5f5;
+        background-color: #232526;
     }
     
     /* Status Indicators */
